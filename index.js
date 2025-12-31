@@ -41,6 +41,55 @@ app.use(express.json());
 app.use(limiter);
 app.use(express.urlencoded({ extended: true }));
 
+
+const corsOptions = {
+  origin: function (origin, callback) {
+    if (!origin) return callback(null, true);
+    
+    const allowedOrigins = [
+      'http://localhost:3000',
+      'http://localhost:5000',
+      'http://localhost:5173',
+      'https://yourfrontenddomain.com',
+      'https://gsf-inky.vercel.app',
+    ];
+
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      if (process.env.NODE_ENV === 'production') {
+        console.log('Blocked CORS request from origin:', origin);
+        callback(new Error('Not allowed by CORS'));
+      } else {
+        callback(null, true);
+      }
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization',
+    'X-Requested-With',
+    'Accept',
+    'Origin',
+    'Access-Control-Request-Method',
+    'Access-Control-Request-Headers',
+    'Admin-Username',
+    'Admin-Password'
+  ],
+  exposedHeaders: [
+    'Content-Range',
+    'X-Content-Range',
+    'Content-Disposition'
+  ],
+  maxAge: 86400,
+  preflightContinue: false,
+  optionsSuccessStatus: 204
+};
+
+app.use(cors(corsOptions));
+
 // MongoDB Connection
 // MongoDB Connection - FIXED VERSION
 mongoose.connect(process.env.MONGODB_URI || 'mongodb+srv://prezent:prezent@prezent.pw70dzq.mongodb.net/prezent')
@@ -651,7 +700,7 @@ const checkOrganizationAccess = async (req, res, next) => {
 
 // Generate QR Code for meeting
 const generateMeetingQRCode = async (meetingCode) => {
-  const url = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/attend/${meetingCode}`;
+  const url = `${process.env.FRONTEND_URL || 'https://gsf-inky.vercel.app'}/attend/${meetingCode}`;
   try {
     const qrCode = await QRCode.toDataURL(url);
     return qrCode;
