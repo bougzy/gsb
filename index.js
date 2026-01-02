@@ -1,4 +1,7 @@
-// index.js - GSAMS Backend System
+// index.js - GSAMS (Geo-Secure Attendance Management System)
+// Streamlined Production Backend
+
+// ================= IMPORTS =================
 const express = require('express');
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
@@ -6,42 +9,46 @@ const jwt = require('jsonwebtoken');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
-const multer = require('multer');
 const QRCode = require('qrcode');
 const crypto = require('crypto');
 const ExcelJS = require('exceljs');
 const PDFDocument = require('pdfkit');
 const moment = require('moment');
 const geolib = require('geolib');
-const NodeGeocoder = require('node-geocoder');
-const twilio = require('twilio');
-// const redis = require('redis');
-const { promisify } = require('util');
+const http = require('http');
 
-// Initialize Express
+// ================= INITIALIZE APP =================
 const app = express();
+const server = http.createServer(app);
+
 const PORT = process.env.PORT || 5000;
 
-// Redis client for rate limiting
-// const redisClient = redis.createClient({
-//   url: process.env.REDIS_URL || 'redis://localhost:6379'
-// });
-// redisClient.on('error', (err) => console.log('Redis Client Error', err));
-
-// Rate limiting
+// ================= RATE LIMITING =================
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100 // limit each IP to 100 requests per windowMs
+  max: 100, // Limit each IP to 100 requests per windowMs
+  message: {
+    error: 'Too many requests from this IP, please try again later.',
+    retryAfter: '15 minutes'
+  },
+  standardHeaders: true,
+  legacyHeaders: false
 });
 
-// Middleware
-app.use(helmet());
-app.use(cors());
-app.use(express.json());
-app.use(limiter);
-app.use(express.urlencoded({ extended: true }));
+// ================= MIDDLEWARE =================
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrc: ["'self'"],
+      imgSrc: ["'self'", "data:", "https:"],
+      connectSrc: ["'self'"]
+    }
+  }
+}));
 
-
+// CORS Configuration
 const corsOptions = {
   origin: function (origin, callback) {
     if (!origin) return callback(null, true);
@@ -89,318 +96,1249 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(limiter);
 
-// MongoDB Connection
-// MongoDB Connection - FIXED VERSION
-mongoose.connect(process.env.MONGODB_URI || 'mongodb+srv://prezent:prezent@prezent.pw70dzq.mongodb.net/prezent')
-  .then(() => {
-    console.log('MongoDB connected successfully');
-  })
-  .catch((err) => {
-    console.error('MongoDB connection error:', err);
-  });
+// ================= DATABASE CONNECTION =================
+mongoose.connect(process.env.MONGODB_URI || 'mongodb+srv://prezent:prezent@prezent.pw70dzq.mongodb.net/prezent', {
+  
+})
+.then(() => {
+  console.log('✅ MongoDB connected successfully');
+})
+.catch((err) => {
+  console.error('❌ MongoDB connection error:', err);
+  process.exit(1);
+});
 
-// Database Models
+// ================= DATABASE SCHEMAS =================
 const Schema = mongoose.Schema;
 
 // Organization Schema
 const OrganizationSchema = new Schema({
-  name: { type: String, required: true },
-  domain: { type: String, unique: true },
-  createdAt: { type: Date, default: Date.now },
-  isActive: { type: Boolean, default: true },
+  name: { 
+    type: String, 
+    required: true,
+    trim: true
+  },
+  domain: { 
+    type: String, 
+    unique: true,
+    lowercase: true,
+    trim: true
+  },
+  logo: { type: String },
+  contactEmail: { type: String },
+  contactPhone: { type: String },
+  address: { type: String },
+  createdAt: { 
+    type: Date, 
+    default: Date.now,
+    index: true
+  },
+  isActive: { 
+    type: Boolean, 
+    default: true,
+    index: true
+  },
   settings: {
-    defaultLocationRadius: { type: Number, default: 100 }, // meters
-    defaultTimeWindow: { type: Number, default: 30 }, // minutes
-    allowSMS: { type: Boolean, default: true },
-    allowUSSD: { type: Boolean, default: true },
-    allowGPS: { type: Boolean, default: true },
-    allowKiosk: { type: Boolean, default: true },
-    allowManual: { type: Boolean, default: true }
+    defaultLocationRadius: { 
+      type: Number, 
+      default: 100,
+      min: 10,
+      max: 10000
+    },
+    defaultTimeWindow: { 
+      type: Number, 
+      default: 30,
+      min: 1,
+      max: 1440
+    },
+    allowSMS: { 
+      type: Boolean, 
+      default: true 
+    },
+    allowUSSD: { 
+      type: Boolean, 
+      default: true 
+    },
+    allowGPS: { 
+      type: Boolean, 
+      default: true 
+    },
+    allowKiosk: { 
+      type: Boolean, 
+      default: true 
+    },
+    allowManual: { 
+      type: Boolean, 
+      default: true 
+    },
+    timezone: { 
+      type: String, 
+      default: 'UTC' 
+    },
+    autoApproveConfidence: { 
+      type: Number, 
+      default: 80,
+      min: 0,
+      max: 100
+    }
+  },
+  subscription: {
+    plan: { 
+      type: String, 
+      enum: ['free', 'basic', 'premium', 'enterprise'],
+      default: 'free'
+    },
+    maxMeetings: { 
+      type: Number, 
+      default: 10 
+    },
+    maxAttendees: { 
+      type: Number, 
+      default: 1000 
+    },
+    features: {
+      analytics: { type: Boolean, default: true },
+      export: { type: Boolean, default: true },
+      customForms: { type: Boolean, default: true },
+      apiAccess: { type: Boolean, default: false }
+    },
+    expiresAt: { type: Date }
   }
 });
 
 // Admin User Schema
 const AdminUserSchema = new Schema({
-  organizationId: { type: Schema.Types.ObjectId, ref: 'Organization', required: true },
-  email: { type: String, required: true, unique: true },
-  password: { type: String, required: true },
-  fullName: { type: String, required: true },
-  phone: { type: String },
+  organizationId: { 
+    type: Schema.Types.ObjectId, 
+    ref: 'Organization', 
+    required: true,
+    index: true
+  },
+  email: { 
+    type: String, 
+    required: true, 
+    unique: true,
+    lowercase: true,
+    trim: true
+  },
+  password: { 
+    type: String, 
+    required: true 
+  },
+  fullName: { 
+    type: String, 
+    required: true,
+    trim: true
+  },
+  phone: { 
+    type: String,
+    trim: true
+  },
+  avatar: { type: String },
   role: { 
     type: String, 
-    enum: ['super_admin', 'admin', 'viewer'], 
-    default: 'admin' 
+    enum: ['super_admin', 'admin', 'viewer', 'moderator'], 
+    default: 'admin',
+    index: true
   },
-  isActive: { type: Boolean, default: true },
-  lastLogin: { type: Date },
-  createdAt: { type: Date, default: Date.now },
+  isActive: { 
+    type: Boolean, 
+    default: true,
+    index: true
+  },
+  lastLogin: { 
+    type: Date 
+  },
+  lastActivity: { 
+    type: Date,
+    default: Date.now
+  },
+  loginAttempts: { 
+    type: Number, 
+    default: 0 
+  },
+  lockUntil: { 
+    type: Date 
+  },
+  twoFactorEnabled: { 
+    type: Boolean, 
+    default: false 
+  },
+  twoFactorSecret: { 
+    type: String 
+  },
+  resetPasswordToken: { 
+    type: String 
+  },
+  resetPasswordExpires: { 
+    type: Date 
+  },
+  createdAt: { 
+    type: Date, 
+    default: Date.now 
+  },
+  updatedAt: { 
+    type: Date, 
+    default: Date.now 
+  },
   permissions: {
-    canCreateMeetings: { type: Boolean, default: true },
-    canEditMeetings: { type: Boolean, default: true },
-    canDeleteMeetings: { type: Boolean, default: false },
-    canViewReports: { type: Boolean, default: true },
-    canManageAdmins: { type: Boolean, default: false },
-    canApproveAttendance: { type: Boolean, default: true }
+    canCreateMeetings: { 
+      type: Boolean, 
+      default: true 
+    },
+    canEditMeetings: { 
+      type: Boolean, 
+      default: true 
+    },
+    canDeleteMeetings: { 
+      type: Boolean, 
+      default: false 
+    },
+    canViewReports: { 
+      type: Boolean, 
+      default: true 
+    },
+    canManageAdmins: { 
+      type: Boolean, 
+      default: false 
+    },
+    canApproveAttendance: { 
+      type: Boolean, 
+      default: true 
+    },
+    canExportData: { 
+      type: Boolean, 
+      default: true 
+    },
+    canAccessAnalytics: { 
+      type: Boolean, 
+      default: true 
+    },
+    canManageOrganization: { 
+      type: Boolean, 
+      default: false 
+    }
   }
 });
 
 // Meeting Schema
 const MeetingSchema = new Schema({
-  organizationId: { type: Schema.Types.ObjectId, ref: 'Organization', required: true },
-  createdBy: { type: Schema.Types.ObjectId, ref: 'AdminUser', required: true },
-  title: { type: String, required: true },
-  description: { type: String },
+  organizationId: { 
+    type: Schema.Types.ObjectId, 
+    ref: 'Organization', 
+    required: true,
+    index: true
+  },
+  createdBy: { 
+    type: Schema.Types.ObjectId, 
+    ref: 'AdminUser', 
+    required: true,
+    index: true
+  },
+  title: { 
+    type: String, 
+    required: true,
+    trim: true,
+    index: true
+  },
+  description: { 
+    type: String,
+    trim: true
+  },
+  category: { 
+    type: String,
+    enum: ['training', 'conference', 'workshop', 'seminar', 'meeting', 'event', 'other'],
+    default: 'meeting'
+  },
+  tags: [{ 
+    type: String,
+    trim: true
+  }],
   location: {
-    name: { type: String, required: true },
-    latitude: { type: Number, required: true },
-    longitude: { type: Number, required: true },
-    address: { type: String },
-    radius: { type: Number, default: 100 } // meters
+    name: { 
+      type: String, 
+      required: true,
+      trim: true
+    },
+    latitude: { 
+      type: Number, 
+      required: true,
+      min: -90,
+      max: 90
+    },
+    longitude: { 
+      type: Number, 
+      required: true,
+      min: -180,
+      max: 180
+    },
+    address: { 
+      type: String,
+      trim: true
+    },
+    radius: { 
+      type: Number, 
+      default: 100,
+      min: 10,
+      max: 10000
+    },
+    geohash: { 
+      type: String,
+      index: true
+    },
+    floor: { 
+      type: String 
+    },
+    room: { 
+      type: String 
+    }
   },
   schedule: {
-    startTime: { type: Date, required: true },
-    endTime: { type: Date, required: true },
-    attendanceStart: { type: Date }, // When attendance can start
-    attendanceEnd: { type: Date }, // When attendance ends
-    bufferBefore: { type: Number, default: 30 }, // minutes before start
-    bufferAfter: { type: Number, default: 30 } // minutes after end
+    startTime: { 
+      type: Date, 
+      required: true,
+      index: true
+    },
+    endTime: { 
+      type: Date, 
+      required: true 
+    },
+    attendanceStart: { 
+      type: Date 
+    },
+    attendanceEnd: { 
+      type: Date 
+    },
+    bufferBefore: { 
+      type: Number, 
+      default: 30,
+      min: 0,
+      max: 1440
+    },
+    bufferAfter: { 
+      type: Number, 
+      default: 30,
+      min: 0,
+      max: 1440
+    },
+    recurrence: {
+      type: { 
+        type: String, 
+        enum: ['none', 'daily', 'weekly', 'monthly', 'custom'] 
+      },
+      interval: { 
+        type: Number, 
+        default: 1 
+      },
+      endDate: { 
+        type: Date 
+      },
+      occurrences: { 
+        type: Number 
+      },
+      daysOfWeek: [{ 
+        type: Number,
+        min: 0,
+        max: 6
+      }]
+    }
   },
   attendanceConfig: {
     allowedModes: {
-      smartphoneGPS: { type: Boolean, default: true },
-      sms: { type: Boolean, default: true },
-      ussd: { type: Boolean, default: true },
-      kiosk: { type: Boolean, default: true },
-      manual: { type: Boolean, default: true }
+      smartphoneGPS: { 
+        type: Boolean, 
+        default: true 
+      },
+      sms: { 
+        type: Boolean, 
+        default: true 
+      },
+      ussd: { 
+        type: Boolean, 
+        default: true 
+      },
+      kiosk: { 
+        type: Boolean, 
+        default: true 
+      },
+      manual: { 
+        type: Boolean, 
+        default: true 
+      }
     },
     requiredFields: [{
-      field: { type: String, enum: ['fullName', 'phone', 'email', 'idNumber'], required: true },
-      isRequired: { type: Boolean, default: true }
+      field: { 
+        type: String, 
+        enum: ['fullName', 'phone', 'email', 'idNumber', 'organization', 'department'], 
+        required: true 
+      },
+      isRequired: { 
+        type: Boolean, 
+        default: true 
+      }
     }],
     verificationStrictness: { 
       type: String, 
-      enum: ['low', 'medium', 'high'], 
+      enum: ['low', 'medium', 'high', 'strict'], 
       default: 'medium' 
     },
     duplicatePrevention: {
-      preventSameDevice: { type: Boolean, default: true },
-      preventSamePhone: { type: Boolean, default: true },
-      preventSameNameTime: { type: Boolean, default: true },
-      timeWindowMinutes: { type: Number, default: 5 }
+      preventSameDevice: { 
+        type: Boolean, 
+        default: true 
+      },
+      preventSamePhone: { 
+        type: Boolean, 
+        default: true 
+      },
+      preventSameNameTime: { 
+        type: Boolean, 
+        default: true 
+      },
+      preventSameIP: { 
+        type: Boolean, 
+        default: false 
+      },
+      timeWindowMinutes: { 
+        type: Number, 
+        default: 5,
+        min: 1,
+        max: 1440
+      }
     },
     timeRequirement: {
-      minimumMinutes: { type: Number, default: 15 }, // Min time to be considered present
-      enableTimeTrack: { type: Boolean, default: false },
-      maxAbsenceMinutes: { type: Number, default: 5 }
+      minimumMinutes: { 
+        type: Number, 
+        default: 15,
+        min: 1,
+        max: 1440
+      },
+      enableTimeTrack: { 
+        type: Boolean, 
+        default: false 
+      },
+      maxAbsenceMinutes: { 
+        type: Number, 
+        default: 5,
+        min: 1,
+        max: 1440
+      }
+    },
+    autoApprove: {
+      enabled: { 
+        type: Boolean, 
+        default: false 
+      },
+      confidenceThreshold: { 
+        type: Number, 
+        default: 80,
+        min: 0,
+        max: 100
+      },
+      afterMinutes: { 
+        type: Number, 
+        default: 5,
+        min: 1,
+        max: 1440
+      }
     }
   },
   accessCodes: {
-    publicCode: { type: String, unique: true }, // For QR codes
-    smsCode: { type: String }, // For SMS attendance
-    ussdCode: { type: String } // For USSD attendance
+    publicCode: { 
+      type: String, 
+      unique: true,
+      index: true
+    },
+    smsCode: { 
+      type: String,
+      index: true
+    },
+    ussdCode: { 
+      type: String,
+      index: true
+    },
+    adminCode: { 
+      type: String 
+    }
   },
   status: { 
     type: String, 
-    enum: ['draft', 'active', 'in_progress', 'completed', 'cancelled'], 
-    default: 'draft' 
+    enum: ['draft', 'scheduled', 'active', 'in_progress', 'completed', 'cancelled', 'archived'], 
+    default: 'draft',
+    index: true
   },
-   // ADD THESE FIELDS:
   customFormFields: [{
-    fieldName: { type: String, required: true },
+    fieldName: { 
+      type: String, 
+      required: true,
+      trim: true
+    },
     fieldType: { 
       type: String, 
-      enum: ['text', 'number', 'email', 'tel', 'select', 'checkbox', 'textarea'],
+      enum: ['text', 'number', 'email', 'tel', 'select', 'checkbox', 'textarea', 'date', 'time'],
       default: 'text'
     },
-    label: { type: String, required: true },
-    placeholder: { type: String },
-    options: [{ value: String, label: String }], // For select/dropdown
-    isRequired: { type: Boolean, default: false },
-    validation: {
-      minLength: { type: Number },
-      maxLength: { type: Number },
-      pattern: { type: String } // regex pattern
+    label: { 
+      type: String, 
+      required: true,
+      trim: true
     },
-    order: { type: Number, default: 0 }
+    placeholder: { 
+      type: String,
+      trim: true
+    },
+    options: [{ 
+      value: String, 
+      label: String 
+    }],
+    isRequired: { 
+      type: Boolean, 
+      default: false 
+    },
+    validation: {
+      minLength: { 
+        type: Number,
+        min: 1
+      },
+      maxLength: { 
+        type: Number,
+        min: 1
+      },
+      pattern: { 
+        type: String 
+      },
+      minValue: { 
+        type: Number 
+      },
+      maxValue: { 
+        type: Number 
+      }
+    },
+    order: { 
+      type: Number, 
+      default: 0 
+    },
+    visibility: {
+      adminOnly: { 
+        type: Boolean, 
+        default: false 
+      },
+      showInReports: { 
+        type: Boolean, 
+        default: true 
+      },
+      showInExports: { 
+        type: Boolean, 
+        default: true 
+      }
+    }
   }],
-  
-  // Enhanced time tracking settings
   timeVerification: {
-    requireMinimumStay: { type: Boolean, default: false },
-    minimumStayMinutes: { type: Number, default: 5 },
-    enableContinuousMonitoring: { type: Boolean, default: false },
-    monitoringInterval: { type: Number, default: 5 }, // minutes
-    maxAllowedAbsence: { type: Number, default: 2 }, // minutes
-    autoVerifyAfterStay: { type: Boolean, default: false },
-    autoVerifyMinutes: { type: Number, default: 10 }
+    requireMinimumStay: { 
+      type: Boolean, 
+      default: false 
+    },
+    minimumStayMinutes: { 
+      type: Number, 
+      default: 5,
+      min: 1,
+      max: 1440
+    },
+    enableContinuousMonitoring: { 
+      type: Boolean, 
+      default: false 
+    },
+    monitoringInterval: { 
+      type: Number, 
+      default: 5,
+      min: 1,
+      max: 60
+    },
+    maxAllowedAbsence: { 
+      type: Number, 
+      default: 2,
+      min: 1,
+      max: 1440
+    },
+    autoVerifyAfterStay: { 
+      type: Boolean, 
+      default: false 
+    },
+    autoVerifyMinutes: { 
+      type: Number, 
+      default: 10,
+      min: 1,
+      max: 1440
+    }
   },
-  
-  // Meeting links
   shareLinks: {
-    adminDashboard: { type: String },
-    attendeeForm: { type: String },
-    qrCodeUrl: { type: String }
+    adminDashboard: { 
+      type: String 
+    },
+    attendeeForm: { 
+      type: String 
+    },
+    qrCodeUrl: { 
+      type: String 
+    },
+    publicAttendanceLink: { 
+      type: String 
+    },
+    embedCode: { 
+      type: String 
+    }
   },
-  
-  
+  notifications: {
+    sendReminders: { 
+      type: Boolean, 
+      default: true 
+    },
+    reminderMinutes: { 
+      type: Number, 
+      default: 60,
+      min: 1,
+      max: 10080
+    },
+    sendStartAlert: { 
+      type: Boolean, 
+      default: true 
+    },
+    sendSummary: { 
+      type: Boolean, 
+      default: true 
+    },
+    summaryRecipients: [{ 
+      type: String 
+    }]
+  },
+  attendanceCount: { 
+    type: Number, 
+    default: 0 
+  },
+  verifiedCount: { 
+    type: Number, 
+    default: 0 
+  },
+  pendingCount: { 
+    type: Number, 
+    default: 0 
+  },
+  maxAttendees: { 
+    type: Number,
+    min: 1
+  },
+  isPrivate: { 
+    type: Boolean, 
+    default: false 
+  },
+  requiresApproval: { 
+    type: Boolean, 
+    default: false 
+  },
+  createdAt: { 
+    type: Date, 
+    default: Date.now,
+    index: true
+  },
+  updatedAt: { 
+    type: Date, 
+    default: Date.now,
+    index: true
+  },
+  deletedAt: { 
+    type: Date 
+  }
+}, {
+  toJSON: { virtuals: true },
+  toObject: { virtuals: true }
+});
 
-  // PWA settings
-  pwaSettings: {
-    enablePWA: { type: Boolean, default: true },
-    appName: { type: String, default: 'GSAMS Attendance' },
-    themeColor: { type: String, default: '#2196F3' },
-    backgroundColor: { type: String, default: '#ffffff' }
-  },
-  createdAt: { type: Date, default: Date.now },
-  updatedAt: { type: Date, default: Date.now }
+// Virtual field for duration
+MeetingSchema.virtual('duration').get(function() {
+  if (this.schedule.startTime && this.schedule.endTime) {
+    return (this.schedule.endTime - this.schedule.startTime) / (1000 * 60 * 60); // hours
+  }
+  return 0;
+});
+
+// Virtual field for isUpcoming
+MeetingSchema.virtual('isUpcoming').get(function() {
+  return this.status === 'scheduled' && this.schedule.startTime > new Date();
+});
+
+// Virtual field for isActiveNow
+MeetingSchema.virtual('isActiveNow').get(function() {
+  const now = new Date();
+  return this.status === 'in_progress' || 
+         (this.status === 'active' && 
+          this.schedule.startTime <= now && 
+          this.schedule.endTime >= now);
 });
 
 // Attendance Record Schema
 const AttendanceRecordSchema = new Schema({
-  meetingId: { type: Schema.Types.ObjectId, ref: 'Meeting', required: true },
-  organizationId: { type: Schema.Types.ObjectId, ref: 'Organization', required: true },
+  meetingId: { 
+    type: Schema.Types.ObjectId, 
+    ref: 'Meeting', 
+    required: true,
+    index: true
+  },
+  organizationId: { 
+    type: Schema.Types.ObjectId, 
+    ref: 'Organization', 
+    required: true,
+    index: true
+  },
   verificationType: { 
     type: String, 
-    enum: ['smartphone_gps', 'sms', 'ussd', 'kiosk', 'manual'],
-    required: true 
+    enum: ['smartphone_gps', 'sms', 'ussd', 'kiosk', 'manual', 'qr_scan', 'nfc', 'biometric'],
+    required: true,
+    index: true
   },
   attendeeInfo: {
-    fullName: { type: String, required: true },
-    phone: { type: String },
-    email: { type: String },
-    idNumber: { type: String },
-    additionalFields: { type: Map, of: String }
+    fullName: { 
+      type: String, 
+      required: true,
+      trim: true,
+      index: true
+    },
+    phone: { 
+      type: String,
+      trim: true,
+      index: true
+    },
+    email: { 
+      type: String,
+      lowercase: true,
+      trim: true,
+      index: true
+    },
+    idNumber: { 
+      type: String,
+      trim: true,
+      index: true
+    },
+    organization: { 
+      type: String,
+      trim: true
+    },
+    department: { 
+      type: String,
+      trim: true
+    },
+    position: { 
+      type: String,
+      trim: true
+    },
+    additionalFields: { 
+      type: Map, 
+      of: String 
+    }
   },
   locationData: {
-    // For GPS verification
     coordinates: {
-      latitude: { type: Number },
-      longitude: { type: Number },
-      accuracy: { type: Number }, // in meters
-      altitude: { type: Number },
-      altitudeAccuracy: { type: Number },
-      heading: { type: Number },
-      speed: { type: Number }
+      latitude: { 
+        type: Number,
+        min: -90,
+        max: 90
+      },
+      longitude: { 
+        type: Number,
+        min: -180,
+        max: 180
+      },
+      accuracy: { 
+        type: Number,
+        min: 0
+      },
+      altitude: { 
+        type: Number 
+      },
+      altitudeAccuracy: { 
+        type: Number 
+      },
+      heading: { 
+        type: Number,
+        min: 0,
+        max: 360
+      },
+      speed: { 
+        type: Number,
+        min: 0
+      },
+      timestamp: { 
+        type: Date 
+      },
+      source: { 
+        type: String,
+        enum: ['gps', 'network', 'passive', 'fused']
+      }
     },
-    // For indirect verification
     verifiedByAdminLocation: {
-      latitude: { type: Number },
-      longitude: { type: Number },
-      accuracy: { type: Number }
+      latitude: { 
+        type: Number,
+        min: -90,
+        max: 90
+      },
+      longitude: { 
+        type: Number,
+        min: -180,
+        max: 180
+      },
+      accuracy: { 
+        type: Number,
+        min: 0
+      },
+      adminId: { 
+        type: Schema.Types.ObjectId, 
+        ref: 'AdminUser' 
+      }
     },
-    distanceFromVenue: { type: Number }, // in meters
-    address: { type: String },
-    isWithinRadius: { type: Boolean }
+    distanceFromVenue: { 
+      type: Number,
+      min: 0
+    },
+    address: { 
+      type: String,
+      trim: true
+    },
+    isWithinRadius: { 
+      type: Boolean,
+      default: false,
+      index: true
+    },
+    validationDetails: {
+      confidenceScore: { 
+        type: Number,
+        min: 0,
+        max: 100
+      },
+      spoofingDetection: {
+        isSuspicious: { 
+          type: Boolean, 
+          default: false 
+        },
+        warnings: [{ 
+          type: String 
+        }],
+        riskLevel: { 
+          type: String, 
+          enum: ['low', 'medium', 'high'] 
+        }
+      },
+      strictnessLevel: { 
+        type: String, 
+        enum: ['low', 'medium', 'high', 'strict'] 
+      }
+    }
   },
   deviceInfo: {
-    userAgent: { type: String },
-    deviceId: { type: String },
-    platform: { type: String },
-    ipAddress: { type: String }
+    userAgent: { 
+      type: String,
+      trim: true
+    },
+    deviceId: { 
+      type: String,
+      index: true
+    },
+    platform: { 
+      type: String 
+    },
+    os: { 
+      type: String 
+    },
+    browser: { 
+      type: String 
+    },
+    browserVersion: { 
+      type: String 
+    },
+    screenResolution: { 
+      type: String 
+    },
+    ipAddress: { 
+      type: String,
+      index: true
+    },
+    isMobile: { 
+      type: Boolean 
+    },
+    isTablet: { 
+      type: Boolean 
+    },
+    isDesktop: { 
+      type: Boolean 
+    },
+    locationCapabilities: {
+      hasGPS: { 
+        type: Boolean, 
+        default: false 
+      },
+      hasNetwork: { 
+        type: Boolean, 
+        default: false 
+      },
+      hasPassive: { 
+        type: Boolean, 
+        default: false 
+      }
+    }
   },
   verificationDetails: {
-    confidenceScore: { type: Number, min: 0, max: 100, default: 0 },
-    verificationMethod: { type: String },
-    verifiedByAdminId: { type: Schema.Types.ObjectId, ref: 'AdminUser' },
-    verificationTimestamp: { type: Date },
-    manualVerificationReason: { type: String }
+    confidenceScore: { 
+      type: Number, 
+      min: 0, 
+      max: 100, 
+      default: 0,
+      index: true
+    },
+    verificationMethod: { 
+      type: String 
+    },
+    verifiedByAdminId: { 
+      type: Schema.Types.ObjectId, 
+      ref: 'AdminUser',
+      index: true
+    },
+    verificationTimestamp: { 
+      type: Date 
+    },
+    manualVerificationReason: { 
+      type: String 
+    },
+    timeVerified: { 
+      type: Date 
+    },
+    timeVerifiedBy: { 
+      type: Schema.Types.ObjectId, 
+      ref: 'AdminUser' 
+    },
+    requiresTimeVerification: { 
+      type: Boolean, 
+      default: false 
+    },
+    minimumStayRequired: { 
+      type: Number, 
+      default: 0 
+    },
+    autoVerified: { 
+      type: Boolean, 
+      default: false 
+    },
+    autoVerifiedAt: { 
+      type: Date 
+    }
   },
   timeTracking: {
-    checkInTime: { type: Date, required: true },
-    checkOutTime: { type: Date },
-    totalDuration: { type: Number }, // in minutes
-    meetsTimeRequirement: { type: Boolean, default: false }
+    checkInTime: { 
+      type: Date, 
+      required: true,
+      index: true
+    },
+    checkOutTime: { 
+      type: Date,
+      index: true
+    },
+    totalDuration: { 
+      type: Number,
+      min: 0
+    },
+    meetsTimeRequirement: { 
+      type: Boolean, 
+      default: false 
+    },
+    meetsMinimumStay: { 
+      type: Boolean, 
+      default: false 
+    }
   },
   status: { 
     type: String, 
-    enum: ['pending', 'verified', 'rejected', 'flagged'], 
-    default: 'pending' 
+    enum: ['pending', 'verified', 'rejected', 'flagged', 'needs_review', 'auto_verified'], 
+    default: 'pending',
+    index: true
   },
-  auditTrail: [{
-    action: { type: String },
-    performedBy: { type: Schema.Types.ObjectId, ref: 'AdminUser' },
-    timestamp: { type: Date, default: Date.now },
-    notes: { type: String }
+  flags: [{
+    type: { 
+      type: String, 
+      enum: ['duplicate', 'suspicious_location', 'time_shortage', 'manual_review', 'system'] 
+    },
+    reason: { 
+      type: String 
+    },
+    flaggedBy: { 
+      type: Schema.Types.ObjectId, 
+      ref: 'AdminUser' 
+    },
+    flaggedAt: { 
+      type: Date, 
+      default: Date.now 
+    },
+    resolved: { 
+      type: Boolean, 
+      default: false 
+    },
+    resolvedBy: { 
+      type: Schema.Types.ObjectId, 
+      ref: 'AdminUser' 
+    },
+    resolvedAt: { 
+      type: Date 
+    },
+    resolutionNotes: { 
+      type: String 
+    }
   }],
-  createdAt: { type: Date, default: Date.now },
-  updatedAt: { type: Date, default: Date.now }
-});
-
-// Device Fingerprint Schema
-const DeviceFingerprintSchema = new Schema({
-  deviceId: { type: String, required: true, unique: true },
-  organizationId: { type: Schema.Types.ObjectId, ref: 'Organization', required: true },
-  lastUsed: { type: Date, default: Date.now },
-  metadata: {
-    userAgent: { type: String },
-    platform: { type: String },
-    os: { type: String },
-    browser: { type: String },
-    screenResolution: { type: String }
+  auditTrail: [{
+    action: { 
+      type: String, 
+      required: true 
+    },
+    performedBy: { 
+      type: Schema.Types.ObjectId, 
+      ref: 'AdminUser' 
+    },
+    performedByName: { 
+      type: String 
+    },
+    timestamp: { 
+      type: Date, 
+      default: Date.now 
+    },
+    notes: { 
+      type: String 
+    },
+    changes: { 
+      type: Map, 
+      of: Schema.Types.Mixed 
+    },
+    ipAddress: { 
+      type: String 
+    },
+    userAgent: { 
+      type: String 
+    }
+  }],
+  createdAt: { 
+    type: Date, 
+    default: Date.now,
+    index: true
   },
-  isBlacklisted: { type: Boolean, default: false },
-  createdAt: { type: Date, default: Date.now }
-});
-
-// SMS Log Schema
-const SMSLogSchema = new Schema({
-  meetingId: { type: Schema.Types.ObjectId, ref: 'Meeting' },
-  organizationId: { type: Schema.Types.ObjectId, ref: 'Organization', required: true },
-  fromNumber: { type: String, required: true },
-  toNumber: { type: String, required: true },
-  message: { type: String, required: true },
-  timestamp: { type: Date, default: Date.now },
-  status: { type: String, enum: ['sent', 'received', 'failed'], default: 'received' },
-  attendanceRecordId: { type: Schema.Types.ObjectId, ref: 'AttendanceRecord' }
-});
-
-// USSD Session Schema
-const USSDSessionSchema = new Schema({
-  sessionId: { type: String, required: true, unique: true },
-  meetingId: { type: Schema.Types.ObjectId, ref: 'Meeting' },
-  organizationId: { type: Schema.Types.ObjectId, ref: 'Organization', required: true },
-  phoneNumber: { type: String, required: true },
-  currentStep: { type: String, default: 'welcome' },
-  data: {
-    meetingCode: { type: String },
-    fullName: { type: String },
-    phone: { type: String },
-    idNumber: { type: String }
+  updatedAt: { 
+    type: Date, 
+    default: Date.now,
+    index: true
   },
-  createdAt: { type: Date, default: Date.now },
-  lastActivity: { type: Date, default: Date.now },
-  isActive: { type: Boolean, default: true }
+  deletedAt: { 
+    type: Date 
+  }
+}, {
+  toJSON: { virtuals: true },
+  toObject: { virtuals: true }
 });
+
+// Indexes for performance
+AttendanceRecordSchema.index({ meetingId: 1, status: 1 });
+AttendanceRecordSchema.index({ organizationId: 1, createdAt: -1 });
+AttendanceRecordSchema.index({ 'attendeeInfo.phone': 1, meetingId: 1 });
+AttendanceRecordSchema.index({ 'deviceInfo.deviceId': 1, meetingId: 1 });
+AttendanceRecordSchema.index({ checkInTime: -1 });
+AttendanceRecordSchema.index({ 'locationData.isWithinRadius': 1 });
 
 // Audit Log Schema
 const AuditLogSchema = new Schema({
-  organizationId: { type: Schema.Types.ObjectId, ref: 'Organization', required: true },
-  userId: { type: Schema.Types.ObjectId, ref: 'AdminUser' },
-  action: { type: String, required: true },
-  entityType: { type: String },
-  entityId: { type: Schema.Types.ObjectId },
-  details: { type: Map, of: Schema.Types.Mixed },
-  ipAddress: { type: String },
-  userAgent: { type: String },
-  timestamp: { type: Date, default: Date.now }
+  organizationId: { 
+    type: Schema.Types.ObjectId, 
+    ref: 'Organization', 
+    required: true,
+    index: true
+  },
+  userId: { 
+    type: Schema.Types.ObjectId, 
+    ref: 'AdminUser',
+    index: true
+  },
+  userEmail: { 
+    type: String,
+    index: true
+  },
+  userRole: { 
+    type: String,
+    index: true
+  },
+  action: { 
+    type: String, 
+    required: true,
+    index: true
+  },
+  entityType: { 
+    type: String,
+    index: true
+  },
+  entityId: { 
+    type: Schema.Types.ObjectId,
+    index: true
+  },
+  entityName: { 
+    type: String 
+  },
+  details: { 
+    type: Map, 
+    of: Schema.Types.Mixed 
+  },
+  ipAddress: { 
+    type: String,
+    index: true
+  },
+  userAgent: { 
+    type: String 
+  },
+  location: {
+    country: { 
+      type: String 
+    },
+    region: { 
+      type: String 
+    },
+    city: { 
+      type: String 
+    },
+    timezone: { 
+      type: String 
+    }
+  },
+  severity: { 
+    type: String, 
+    enum: ['info', 'warning', 'error', 'critical'],
+    default: 'info',
+    index: true
+  },
+  source: { 
+    type: String,
+    enum: ['api', 'web', 'mobile', 'system', 'cron'],
+    default: 'api'
+  },
+  timestamp: { 
+    type: Date, 
+    default: Date.now,
+    index: true
+  },
+  acknowledged: { 
+    type: Boolean, 
+    default: false 
+  },
+  acknowledgedBy: { 
+    type: Schema.Types.ObjectId, 
+    ref: 'AdminUser' 
+  },
+  acknowledgedAt: { 
+    type: Date 
+  },
+  metadata: { 
+    type: Map, 
+    of: Schema.Types.Mixed 
+  }
 });
 
-// Create Models
+// Notification Schema
+const NotificationSchema = new Schema({
+  organizationId: { 
+    type: Schema.Types.ObjectId, 
+    ref: 'Organization', 
+    required: true,
+    index: true
+  },
+  userId: { 
+    type: Schema.Types.ObjectId, 
+    ref: 'AdminUser',
+    index: true
+  },
+  meetingId: { 
+    type: Schema.Types.ObjectId, 
+    ref: 'Meeting',
+    index: true
+  },
+  type: { 
+    type: String, 
+    enum: ['attendance', 'meeting', 'system', 'alert', 'reminder'],
+    required: true,
+    index: true
+  },
+  title: { 
+    type: String, 
+    required: true 
+  },
+  message: { 
+    type: String, 
+    required: true 
+  },
+  data: { 
+    type: Map, 
+    of: Schema.Types.Mixed 
+  },
+  priority: { 
+    type: String, 
+    enum: ['low', 'medium', 'high', 'urgent'],
+    default: 'medium'
+  },
+  read: { 
+    type: Boolean, 
+    default: false,
+    index: true
+  },
+  readAt: { 
+    type: Date 
+  },
+  actionUrl: { 
+    type: String 
+  },
+  actionLabel: { 
+    type: String 
+  },
+  expiresAt: { 
+    type: Date 
+  },
+  createdAt: { 
+    type: Date, 
+    default: Date.now,
+    index: true
+  },
+  updatedAt: { 
+    type: Date, 
+    default: Date.now 
+  }
+});
+
+// ================= CREATE MODELS =================
 const Organization = mongoose.model('Organization', OrganizationSchema);
 const AdminUser = mongoose.model('AdminUser', AdminUserSchema);
 const Meeting = mongoose.model('Meeting', MeetingSchema);
 const AttendanceRecord = mongoose.model('AttendanceRecord', AttendanceRecordSchema);
-const DeviceFingerprint = mongoose.model('DeviceFingerprint', DeviceFingerprintSchema);
-const SMSLog = mongoose.model('SMSLog', SMSLogSchema);
-const USSDSession = mongoose.model('USSDSession', USSDSessionSchema);
 const AuditLog = mongoose.model('AuditLog', AuditLogSchema);
+const Notification = mongoose.model('Notification', NotificationSchema);
 
-// Helper Functions
-const generateAccessCode = () => {
-  return crypto.randomBytes(4).toString('hex').toUpperCase();
+// ================= HELPER FUNCTIONS =================
+
+/**
+ * Generate unique access codes
+ */
+const generateAccessCode = (length = 8) => {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  let result = '';
+  for (let i = 0; i < length; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
 };
 
+/**
+ * Calculate distance between two coordinates in meters
+ * Uses Haversine formula
+ */
 const calculateDistance = (lat1, lon1, lat2, lon2) => {
   const R = 6371e3; // Earth's radius in meters
   const φ1 = lat1 * Math.PI / 180;
@@ -416,9 +1354,9 @@ const calculateDistance = (lat1, lon1, lat2, lon2) => {
   return R * c; // Distance in meters
 };
 
-// Add this after the existing calculateDistance function (around line 353)
-
-// Enhanced location validation with multiple checks
+/**
+ * Enhanced location validation with multiple checks
+ */
 const validateLocation = (userLat, userLon, meetingLat, meetingLon, radius, userAccuracy) => {
   // Calculate distance
   const distance = calculateDistance(userLat, userLon, meetingLat, meetingLon);
@@ -440,26 +1378,26 @@ const validateLocation = (userLat, userLon, meetingLat, meetingLon, radius, user
     checks: {
       basicRadiusCheck: distance <= radius,
       accuracyAdjustedCheck: distance <= (radius + accuracyBuffer),
-      strictCheck: distance <= Math.max(radius - 10, radius * 0.9), // 10m or 10% stricter
+      strictCheck: distance <= Math.max(radius - 10, radius * 0.9),
       
-      // Verify coordinates are valid (not 0,0 or extreme values)
+      // Verify coordinates are valid
       validCoordinates: 
         userLat >= -90 && userLat <= 90 && 
         userLon >= -180 && userLon <= 180 &&
         userLat !== 0 && userLon !== 0,
       
       // Check for suspicious patterns
-      notSameAsPrevious: true, // Will be set by caller
-      notMockedLocation: userAccuracy < 1000, // Mocked locations often have high accuracy
+      notSameAsPrevious: true,
+      notMockedLocation: userAccuracy < 1000,
       
-      // Time-based validation (location should be recent)
-      isRecent: true // Will be set by caller
+      // Time-based validation
+      isRecent: true
     },
     
-    // Confidence scoring based on multiple factors
+    // Confidence scoring
     confidenceScore: calculateLocationConfidence(distance, radius, userAccuracy),
     
-    // Detailed messages for debugging
+    // Detailed messages
     messages: []
   };
   
@@ -479,17 +1417,15 @@ const validateLocation = (userLat, userLon, meetingLat, meetingLon, radius, user
   return validation;
 };
 
-// Calculate location confidence score
+/**
+ * Calculate location confidence score
+ */
 const calculateLocationConfidence = (distance, radius, accuracy) => {
   let score = 100;
   
   // Penalize for distance from center
-  if (distance > radius * 0.5) {
-    score -= 20;
-  }
-  if (distance > radius * 0.8) {
-    score -= 30;
-  }
+  if (distance > radius * 0.5) score -= 20;
+  if (distance > radius * 0.8) score -= 30;
   
   // Penalize for poor accuracy
   if (accuracy > 50) score -= 10;
@@ -503,26 +1439,28 @@ const calculateLocationConfidence = (distance, radius, accuracy) => {
   return Math.max(0, Math.min(100, score));
 };
 
-// Detect potential location spoofing
+/**
+ * Detect potential location spoofing
+ */
 const detectLocationSpoofing = (locationData, previousLocations = []) => {
   const warnings = [];
   
   // Check for unrealistic accuracy
   if (locationData.accuracy < 1) {
-    warnings.push('Unusually high accuracy detected (potential spoofing)');
+    warnings.push('Unusually high accuracy detected');
   }
   
-  // Check for unrealistic speed (if available)
-  if (locationData.speed && locationData.speed > 100) { // > 100 m/s = 360 km/h
+  // Check for unrealistic speed
+  if (locationData.speed && locationData.speed > 100) {
     warnings.push('Unrealistic movement speed detected');
   }
   
-  // Check for altitude anomalies (if available)
+  // Check for altitude anomalies
   if (locationData.altitude && Math.abs(locationData.altitude) > 10000) {
     warnings.push('Unrealistic altitude detected');
   }
   
-  // Check for consistent coordinates (no movement)
+  // Check for consistent coordinates
   if (previousLocations.length >= 3) {
     const recentLocations = previousLocations.slice(-3);
     const allSame = recentLocations.every(loc => 
@@ -531,18 +1469,18 @@ const detectLocationSpoofing = (locationData, previousLocations = []) => {
     );
     
     if (allSame) {
-      warnings.push('No location movement detected (potential static spoof)');
+      warnings.push('No location movement detected');
     }
   }
   
   // Check for common mock location patterns
   const commonMockCoordinates = [
-    { lat: 37.4219983, lon: -122.084 }, // Google HQ
-    { lat: 37.3349, lon: -122.009 }, // Apple Park
-    { lat: 37.7749, lon: -122.4194 }, // San Francisco
-    { lat: 40.7128, lon: -74.0060 }, // New York
-    { lat: 51.5074, lon: -0.1278 }, // London
-    { lat: 0, lon: 0 }, // Null Island
+    { lat: 37.4219983, lon: -122.084 },
+    { lat: 37.3349, lon: -122.009 },
+    { lat: 37.7749, lon: -122.4194 },
+    { lat: 40.7128, lon: -74.0060 },
+    { lat: 51.5074, lon: -0.1278 },
+    { lat: 0, lon: 0 },
   ];
   
   for (const mock of commonMockCoordinates) {
@@ -559,6 +1497,9 @@ const detectLocationSpoofing = (locationData, previousLocations = []) => {
   };
 };
 
+/**
+ * Calculate overall confidence score
+ */
 const calculateConfidenceScore = (verificationType, locationData, meetingConfig) => {
   let score = 0;
   
@@ -569,7 +1510,7 @@ const calculateConfidenceScore = (verificationType, locationData, meetingConfig)
       if (locationData.accuracy < 5) score += 5;
       break;
     case 'manual':
-      score = 95; // High confidence for admin verification
+      score = 95;
       break;
     case 'kiosk':
       score = 85;
@@ -592,6 +1533,100 @@ const calculateConfidenceScore = (verificationType, locationData, meetingConfig)
   return Math.min(Math.max(score, 0), 100);
 };
 
+/**
+ * Generate meeting QR code
+ */
+const generateMeetingQRCode = async (meetingCode) => {
+  const url = `${process.env.FRONTEND_URL || 'https://gsf-inky.vercel.app'}/attend/${meetingCode}`;
+  try {
+    const qrCode = await QRCode.toDataURL(url);
+    return qrCode;
+  } catch (error) {
+    console.error('QR Code generation error:', error);
+    return null;
+  }
+};
+
+/**
+ * Generate meeting links
+ */
+const generateMeetingLinks = (meetingId, publicCode) => {
+  const baseUrl = process.env.FRONTEND_URL || 'https://gsf-inky.vercel.app';
+  return {
+    adminDashboard: `${baseUrl}/admin/meetings/${meetingId}`,
+    attendeeForm: `${baseUrl}/attend/${publicCode}`,
+    qrCodeUrl: `${baseUrl}/api/meetings/${meetingId}/qrcode`,
+    publicAttendanceLink: `${baseUrl}/attend/${publicCode}/form`
+  };
+};
+
+/**
+ * Generate geohash for location
+ */
+const generateGeohash = (latitude, longitude, precision = 9) => {
+  const base32 = '0123456789bcdefghjkmnpqrstuvwxyz';
+  let hash = '';
+  let bits = 0;
+  let bit = 0;
+  
+  let latMin = -90, latMax = 90;
+  let lonMin = -180, lonMax = 180;
+  
+  while (hash.length < precision) {
+    if (bits % 2 === 0) {
+      const lonMid = (lonMin + lonMax) / 2;
+      if (longitude < lonMid) {
+        bit = bit << 1;
+        lonMax = lonMid;
+      } else {
+        bit = (bit << 1) | 1;
+        lonMin = lonMid;
+      }
+    } else {
+      const latMid = (latMin + latMax) / 2;
+      if (latitude < latMid) {
+        bit = bit << 1;
+        latMax = latMid;
+      } else {
+        bit = (bit << 1) | 1;
+        latMin = latMid;
+      }
+    }
+    
+    bits++;
+    
+    if (bits % 5 === 0) {
+      hash += base32[bit];
+      bit = 0;
+    }
+  }
+  
+  return hash;
+};
+
+/**
+ * Send notification to admin
+ */
+const sendNotification = async (userId, title, message, data = {}, type = 'system') => {
+  try {
+    const notification = await Notification.create({
+      userId,
+      title,
+      message,
+      data,
+      type,
+      organizationId: data.organizationId
+    });
+    
+    return notification;
+  } catch (error) {
+    console.error('Notification error:', error);
+  }
+};
+
+/**
+ * Generate attendance PDF
+ */
 const generateAttendancePDF = async (meeting, records, organization) => {
   return new Promise((resolve, reject) => {
     try {
@@ -684,312 +1719,9 @@ const generateAttendancePDF = async (meeting, records, organization) => {
   });
 };
 
-// Add these helper functions after line 353 (after generateAttendanceExcel function)
-
-// Generate meeting links
-const generateMeetingLinks = (meetingId, publicCode) => {
-  const baseUrl = process.env.FRONTEND_URL || 'https://gsf-inky.vercel.app';
-  return {
-    adminDashboard: `${baseUrl}/admin/meetings/${meetingId}`,
-    attendeeForm: `${baseUrl}/attend/${publicCode}`,
-    qrCodeUrl: `${baseUrl}/api/meetings/${meetingId}/qrcode`,
-    publicAttendanceLink: `${baseUrl}/attend/${publicCode}/form`
-  };
-};
-
-// Generate PWA manifest
-const generatePWAManifest = (meeting, organization) => {
-  return {
-    name: meeting.pwaSettings?.appName || `${organization.name} Attendance`,
-    short_name: 'GSAMS',
-    description: `Attendance for ${meeting.title}`,
-    theme_color: meeting.pwaSettings?.themeColor || '#2196F3',
-    background_color: meeting.pwaSettings?.backgroundColor || '#ffffff',
-    display: 'standalone',
-    orientation: 'portrait',
-    scope: '/',
-    start_url: `/attend/${meeting.accessCodes.publicCode}`,
-    icons: [
-      {
-        src: '/icons/icon-72x72.png',
-        sizes: '72x72',
-        type: 'image/png'
-      },
-      {
-        src: '/icons/icon-96x96.png',
-        sizes: '96x96',
-        type: 'image/png'
-      },
-      {
-        src: '/icons/icon-128x128.png',
-        sizes: '128x128',
-        type: 'image/png'
-      },
-      {
-        src: '/icons/icon-144x144.png',
-        sizes: '144x144',
-        type: 'image/png'
-      },
-      {
-        src: '/icons/icon-152x152.png',
-        sizes: '152x152',
-        type: 'image/png'
-      },
-      {
-        src: '/icons/icon-192x192.png',
-        sizes: '192x192',
-        type: 'image/png',
-        purpose: 'any maskable'
-      },
-      {
-        src: '/icons/icon-384x384.png',
-        sizes: '384x384',
-        type: 'image/png'
-      },
-      {
-        src: '/icons/icon-512x512.png',
-        sizes: '512x512',
-        type: 'image/png'
-      }
-    ],
-    shortcuts: [
-      {
-        name: 'Mark Attendance',
-        short_name: 'Attend',
-        description: 'Mark your attendance',
-        url: `/attend/${meeting.accessCodes.publicCode}`,
-        icons: [{ src: '/icons/icon-96x96.png', sizes: '96x96' }]
-      },
-      {
-        name: 'View Meeting',
-        short_name: 'Meeting',
-        description: 'View meeting details',
-        url: `/meetings/${meeting._id}`,
-        icons: [{ src: '/icons/icon-96x96.png', sizes: '96x96' }]
-      }
-    ]
-  };
-};
-
-// Generate service worker
-const generateServiceWorker = () => {
-  return `
-self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open('gsams-v1').then((cache) => {
-      return cache.addAll([
-        '/',
-        '/manifest.json',
-        '/icons/icon-72x72.png',
-        '/icons/icon-96x96.png',
-        '/icons/icon-128x128.png',
-        '/icons/icon-144x144.png',
-        '/icons/icon-152x152.png',
-        '/icons/icon-192x192.png',
-        '/icons/icon-384x384.png',
-        '/icons/icon-512x512.png'
-      ]);
-    })
-  );
-});
-
-self.addEventListener('fetch', (event) => {
-  event.respondWith(
-    caches.match(event.request).then((response) => {
-      return response || fetch(event.request);
-    })
-  );
-});
-
-self.addEventListener('push', (event) => {
-  const options = {
-    body: event.data.text(),
-    icon: '/icons/icon-192x192.png',
-    badge: '/icons/icon-72x72.png',
-    vibrate: [100, 50, 100],
-    data: {
-      dateOfArrival: Date.now(),
-      primaryKey: '2'
-    },
-    actions: [
-      {
-        action: 'explore',
-        title: 'Go to Meeting',
-        icon: '/icons/icon-72x72.png'
-      },
-      {
-        action: 'close',
-        title: 'Close',
-        icon: '/icons/icon-72x72.png'
-      }
-    ]
-  };
-  
-  event.waitUntil(
-    self.registration.showNotification('GSAMS Attendance', options)
-  );
-});
-`;
-};
-
-// Monitor attendance duration (for time verification)
-const monitorAttendanceDuration = async (attendanceId, meetingId) => {
-  try {
-    const attendance = await AttendanceRecord.findById(attendanceId);
-    const meeting = await Meeting.findById(meetingId);
-    
-    if (!attendance || !meeting) return;
-    
-    const now = new Date();
-    const checkInTime = new Date(attendance.timeTracking.checkInTime);
-    const durationMinutes = Math.round((now - checkInTime) / (1000 * 60));
-    
-    // Check if meets minimum stay requirement
-    if (meeting.timeVerification?.requireMinimumStay) {
-      const meetsMinimumStay = durationMinutes >= meeting.timeVerification.minimumStayMinutes;
-      
-      // Update attendance record
-      attendance.timeTracking.meetsMinimumStay = meetsMinimumStay;
-      
-      // Auto-verify if configured
-      if (meeting.timeVerification.autoVerifyAfterStay && 
-          durationMinutes >= meeting.timeVerification.autoVerifyMinutes) {
-        if (attendance.status === 'pending') {
-          attendance.status = 'verified';
-          attendance.auditTrail.push({
-            action: 'AUTO_VERIFIED',
-            performedBy: null,
-            notes: `Automatically verified after ${durationMinutes} minutes of attendance`
-          });
-          
-          // Increase confidence score
-          attendance.verificationDetails.confidenceScore = Math.min(
-            attendance.verificationDetails.confidenceScore + 15,
-            100
-          );
-        }
-      }
-      
-      await attendance.save();
-      
-      // Log monitoring event
-      await AuditLog.create({
-        organizationId: meeting.organizationId,
-        userId: null,
-        action: 'ATTENDANCE_MONITORED',
-        entityType: 'attendance',
-        entityId: attendance._id,
-        details: {
-          durationMinutes,
-          meetsMinimumStay,
-          minimumRequired: meeting.timeVerification.minimumStayMinutes
-        },
-        ipAddress: 'system',
-        userAgent: 'GSAMS-Monitoring-System'
-      });
-    }
-  } catch (error) {
-    console.error('Monitoring error:', error);
-  }
-};
-
-// Generate meeting report PDF (for all meetings)
-const generateAllMeetingsPDF = async (meetings, organization, startDate, endDate) => {
-  return new Promise((resolve, reject) => {
-    try {
-      const doc = new PDFDocument({ margin: 50, size: 'A4' });
-      const buffers = [];
-      
-      doc.on('data', buffers.push.bind(buffers));
-      doc.on('end', () => {
-        const pdfData = Buffer.concat(buffers);
-        resolve(pdfData);
-      });
-      
-      // Header
-      doc.fontSize(20).text(organization.name, { align: 'center' });
-      doc.moveDown();
-      doc.fontSize(16).text('All Meetings Report', { align: 'center' });
-      doc.moveDown();
-      
-      // Date range
-      doc.fontSize(12).text(`Report Period: ${moment(startDate).format('MMMM Do YYYY')} to ${moment(endDate).format('MMMM Do YYYY')}`);
-      doc.moveDown();
-      
-      // Summary Statistics
-      doc.fontSize(14).text('Summary Statistics:', { underline: true });
-      doc.moveDown(0.5);
-      
-      const totalMeetings = meetings.length;
-      const totalAttendees = meetings.reduce((sum, meeting) => sum + (meeting.attendanceCount || 0), 0);
-      const activeMeetings = meetings.filter(m => m.status === 'in_progress').length;
-      const completedMeetings = meetings.filter(m => m.status === 'completed').length;
-      
-      doc.fontSize(12);
-      doc.text(`Total Meetings: ${totalMeetings}`);
-      doc.text(`Total Attendees: ${totalAttendees}`);
-      doc.text(`Active Meetings: ${activeMeetings}`);
-      doc.text(`Completed Meetings: ${completedMeetings}`);
-      doc.moveDown();
-      
-      // Meetings Table
-      doc.fontSize(14).text('Meetings List:', { underline: true });
-      doc.moveDown(0.5);
-      
-      // Table Header
-      doc.font('Helvetica-Bold');
-      let yPos = doc.y;
-      doc.text('Title', 50, yPos);
-      doc.text('Date', 200, yPos);
-      doc.text('Location', 280, yPos);
-      doc.text('Status', 400, yPos);
-      doc.text('Attendees', 480, yPos);
-      doc.moveDown();
-      
-      // Table Rows
-      doc.font('Helvetica');
-      meetings.forEach((meeting, index) => {
-        if (yPos > 700) {
-          doc.addPage();
-          yPos = 50;
-        }
-        
-        doc.text(meeting.title.substring(0, 25) + (meeting.title.length > 25 ? '...' : ''), 50, yPos);
-        doc.text(moment(meeting.schedule.startTime).format('MM/DD'), 200, yPos);
-        doc.text(meeting.location.name.substring(0, 15) + (meeting.location.name.length > 15 ? '...' : ''), 280, yPos);
-        
-        // Status with color
-        const statusColors = {
-          'draft': 'gray',
-          'active': 'blue',
-          'in_progress': 'green',
-          'completed': 'black',
-          'cancelled': 'red'
-        };
-        
-        doc.fillColor(statusColors[meeting.status] || 'black');
-        doc.text(meeting.status.replace('_', ' ').toUpperCase(), 400, yPos);
-        doc.fillColor('black');
-        
-        doc.text(meeting.attendanceCount?.toString() || '0', 480, yPos);
-        
-        yPos += 20;
-        doc.moveTo(50, yPos).lineTo(550, yPos).stroke();
-        yPos += 10;
-      });
-      
-      // Footer
-      doc.moveDown(2);
-      doc.fontSize(10).text(`Report generated on ${moment().format('MMMM Do YYYY, h:mm:ss a')}`, { align: 'center' });
-      doc.text(`Total pages: ${doc.bufferedPageRange().count}`, { align: 'center' });
-      
-      doc.end();
-    } catch (error) {
-      reject(error);
-    }
-  });
-};
-
+/**
+ * Generate attendance Excel
+ */
 const generateAttendanceExcel = async (meeting, records, organization) => {
   const workbook = new ExcelJS.Workbook();
   const worksheet = workbook.addWorksheet('Attendance');
@@ -1038,22 +1770,15 @@ const generateAttendanceExcel = async (meeting, records, organization) => {
   
   // Attendee List Header
   const headerRow = summaryRow + 10;
-  worksheet.getCell(`A${headerRow}`).value = 'Full Name';
-  worksheet.getCell(`B${headerRow}`).value = 'Phone';
-  worksheet.getCell(`C${headerRow}`).value = 'Email';
-  worksheet.getCell(`D${headerRow}`).value = 'ID Number';
-  worksheet.getCell(`E${headerRow}`).value = 'Verification Method';
-  worksheet.getCell(`F${headerRow}`).value = 'Check-in Time';
-  worksheet.getCell(`G${headerRow}`).value = 'Check-out Time';
-  worksheet.getCell(`H${headerRow}`).value = 'Duration (min)';
-  worksheet.getCell(`I${headerRow}`).value = 'Status';
-  worksheet.getCell(`J${headerRow}`).value = 'Confidence Score';
-  worksheet.getCell(`K${headerRow}`).value = 'Location';
-  worksheet.getCell(`L${headerRow}`).value = 'Distance from Venue (m)';
+  const headers = [
+    'Full Name', 'Phone', 'Email', 'ID Number', 'Verification Method',
+    'Check-in Time', 'Check-out Time', 'Duration (min)', 'Status',
+    'Confidence Score', 'Location', 'Distance from Venue (m)'
+  ];
   
-  // Style header
-  for (let i = 1; i <= 12; i++) {
-    const cell = worksheet.getCell(headerRow, i);
+  headers.forEach((header, index) => {
+    const cell = worksheet.getCell(headerRow, index + 1);
+    cell.value = header;
     cell.font = { bold: true };
     cell.fill = {
       type: 'pattern',
@@ -1066,51 +1791,51 @@ const generateAttendanceExcel = async (meeting, records, organization) => {
       bottom: { style: 'thin' },
       right: { style: 'thin' }
     };
-  }
+  });
   
   // Add attendance records
   records.forEach((record, index) => {
     const row = headerRow + index + 1;
     
-    worksheet.getCell(`A${row}`).value = record.attendeeInfo.fullName;
-    worksheet.getCell(`B${row}`).value = record.attendeeInfo.phone;
-    worksheet.getCell(`C${row}`).value = record.attendeeInfo.email;
-    worksheet.getCell(`D${row}`).value = record.attendeeInfo.idNumber;
-    worksheet.getCell(`E${row}`).value = record.verificationType.replace('_', ' ').toUpperCase();
-    worksheet.getCell(`F${row}`).value = moment(record.timeTracking.checkInTime).format('YYYY-MM-DD HH:mm:ss');
-    worksheet.getCell(`G${row}`).value = record.timeTracking.checkOutTime ? 
-      moment(record.timeTracking.checkOutTime).format('YYYY-MM-DD HH:mm:ss') : '';
-    worksheet.getCell(`H${row}`).value = record.timeTracking.totalDuration || '';
-    worksheet.getCell(`I${row}`).value = record.status.toUpperCase();
-    worksheet.getCell(`J${row}`).value = record.verificationDetails.confidenceScore;
-    worksheet.getCell(`K${row}`).value = record.locationData.address || 
-      `${record.locationData.coordinates?.latitude}, ${record.locationData.coordinates?.longitude}`;
-    worksheet.getCell(`L${row}`).value = record.locationData.distanceFromVenue || '';
+    const rowData = [
+      record.attendeeInfo.fullName,
+      record.attendeeInfo.phone,
+      record.attendeeInfo.email,
+      record.attendeeInfo.idNumber,
+      record.verificationType.replace('_', ' ').toUpperCase(),
+      moment(record.timeTracking.checkInTime).format('YYYY-MM-DD HH:mm:ss'),
+      record.timeTracking.checkOutTime ? 
+        moment(record.timeTracking.checkOutTime).format('YYYY-MM-DD HH:mm:ss') : '',
+      record.timeTracking.totalDuration || '',
+      record.status.toUpperCase(),
+      record.verificationDetails.confidenceScore,
+      record.locationData.address || 
+        `${record.locationData.coordinates?.latitude}, ${record.locationData.coordinates?.longitude}`,
+      record.locationData.distanceFromVenue || ''
+    ];
+    
+    rowData.forEach((value, colIndex) => {
+      worksheet.getCell(row, colIndex + 1).value = value;
+    });
     
     // Color code status
-    const statusCell = worksheet.getCell(`I${row}`);
-    if (record.status === 'verified') {
-      statusCell.fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: 'FFC6EFCE' }
-      };
-    } else if (record.status === 'pending') {
-      statusCell.fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: 'FFFFEB9C' }
-      };
-    } else {
-      statusCell.fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: 'FFFFC7CE' }
-      };
-    }
+    const statusCell = worksheet.getCell(row, 9);
+    const statusColors = {
+      'verified': 'FFC6EFCE',
+      'pending': 'FFFFEB9C',
+      'rejected': 'FFFFC7CE',
+      'flagged': 'FFFFE699',
+      'auto_verified': 'FFD9EAD3'
+    };
+    
+    statusCell.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: statusColors[record.status] || 'FFFFFFFF' }
+    };
     
     // Add borders
-    for (let i = 1; i <= 12; i++) {
+    for (let i = 1; i <= headers.length; i++) {
       const cell = worksheet.getCell(row, i);
       cell.border = {
         top: { style: 'thin' },
@@ -1138,482 +1863,142 @@ const generateAttendanceExcel = async (meeting, records, organization) => {
   return buffer;
 };
 
-// Authentication Middleware
+// ================= AUTHENTICATION MIDDLEWARE =================
+
+/**
+ * Verify JWT token
+ */
 const authenticateToken = async (req, res, next) => {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
-  
-  if (!token) return res.status(401).json({ error: 'Access token required' });
-  
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
-    req.user = await AdminUser.findById(decoded.userId).populate('organizationId');
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
     
-    if (!req.user || !req.user.isActive) {
-      return res.status(401).json({ error: 'User account is inactive or not found' });
+    if (!token) {
+      return res.status(401).json({ 
+        error: 'Access token required',
+        code: 'TOKEN_REQUIRED'
+      });
     }
     
-    // Log the action
-    await AuditLog.create({
-      organizationId: req.user.organizationId._id,
-      userId: req.user._id,
-      action: 'API_ACCESS',
-      entityType: 'route',
-      entityId: null,
-      details: { route: req.path, method: req.method },
-      ipAddress: req.ip,
-      userAgent: req.get('User-Agent')
-    });
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key-change-in-production');
+    req.user = await AdminUser.findById(decoded.userId)
+      .populate('organizationId')
+      .select('-password -resetPasswordToken -resetPasswordExpires -twoFactorSecret');
+    
+    if (!req.user) {
+      return res.status(401).json({ 
+        error: 'User account not found',
+        code: 'USER_NOT_FOUND'
+      });
+    }
+    
+    if (!req.user.isActive) {
+      return res.status(401).json({ 
+        error: 'User account is deactivated',
+        code: 'ACCOUNT_DEACTIVATED'
+      });
+    }
+    
+    // Update last activity
+    req.user.lastActivity = new Date();
+    await req.user.save();
     
     next();
   } catch (error) {
-    return res.status(403).json({ error: 'Invalid or expired token' });
+    if (error.name === 'JsonWebTokenError') {
+      return res.status(403).json({ 
+        error: 'Invalid token',
+        code: 'INVALID_TOKEN'
+      });
+    }
+    if (error.name === 'TokenExpiredError') {
+      return res.status(403).json({ 
+        error: 'Token expired',
+        code: 'TOKEN_EXPIRED'
+      });
+    }
+    console.error('Authentication error:', error);
+    return res.status(500).json({ 
+      error: 'Authentication failed',
+      code: 'AUTH_FAILED'
+    });
   }
 };
 
-// Check if user is super admin
+/**
+ * Check if user is super admin
+ */
 const isSuperAdmin = (req, res, next) => {
   if (req.user.role !== 'super_admin') {
-    return res.status(403).json({ error: 'Super admin access required' });
+    return res.status(403).json({ 
+      error: 'Super admin access required',
+      code: 'SUPER_ADMIN_REQUIRED'
+    });
   }
   next();
 };
 
-
-// Add after existing meeting routes (around line 610)
-
-// ================= NEW MEETING APIs =================
-
-// DELETE Meeting
-app.delete('/api/meetings/:meetingId', authenticateToken, async (req, res) => {
-  try {
-    const meeting = await Meeting.findOne({
-      _id: req.params.meetingId,
-      organizationId: req.user.organizationId._id
-    });
-    
-    if (!meeting) {
-      return res.status(404).json({ error: 'Meeting not found' });
+/**
+ * Check permissions middleware
+ */
+const checkPermission = (permission) => {
+  return (req, res, next) => {
+    if (req.user.role === 'super_admin') {
+      return next();
     }
     
-    // Check permissions
-    if (!req.user.permissions.canDeleteMeetings && req.user.role !== 'super_admin') {
-      return res.status(403).json({ error: 'Permission denied to delete meetings' });
-    }
-    
-    // Check if meeting has attendance records
-    const attendanceCount = await AttendanceRecord.countDocuments({
-      meetingId: meeting._id
-    });
-    
-    if (attendanceCount > 0 && req.body.force !== 'true') {
-      return res.status(400).json({
-        error: 'Meeting has attendance records. Use force=true to delete anyway.',
-        attendanceCount
-      });
-    }
-    
-    // Soft delete (mark as cancelled) or hard delete based on parameter
-    if (req.body.hardDelete === 'true') {
-      await Meeting.deleteOne({ _id: meeting._id });
-      
-      // Also delete related attendance records if specified
-      if (req.body.deleteAttendance === 'true') {
-        await AttendanceRecord.deleteMany({ meetingId: meeting._id });
-        await SMSLog.deleteMany({ meetingId: meeting._id });
-        await USSDSession.deleteMany({ meetingId: meeting._id });
-      }
-    } else {
-      // Soft delete - mark as cancelled
-      meeting.status = 'cancelled';
-      meeting.updatedAt = new Date();
-      await meeting.save();
-    }
-    
-    await AuditLog.create({
-      organizationId: req.user.organizationId._id,
-      userId: req.user._id,
-      action: req.body.hardDelete === 'true' ? 'MEETING_HARD_DELETED' : 'MEETING_CANCELLED',
-      entityType: 'meeting',
-      entityId: meeting._id,
-      details: {
-        title: meeting.title,
-        hardDelete: req.body.hardDelete === 'true',
-        deleteAttendance: req.body.deleteAttendance === 'true',
-        attendanceCount
-      },
-      ipAddress: req.ip,
-      userAgent: req.get('User-Agent')
-    });
-    
-    res.json({
-      success: true,
-      message: req.body.hardDelete === 'true' ? 'Meeting permanently deleted' : 'Meeting cancelled',
-      meetingId: meeting._id
-    });
-    
-  } catch (error) {
-    console.error('Delete meeting error:', error);
-    res.status(500).json({ error: 'Failed to delete meeting' });
-  }
-});
-
-// Get meeting with enhanced details including links
-app.get('/api/meetings/:meetingId/details', authenticateToken, async (req, res) => {
-  try {
-    const meeting = await Meeting.findOne({
-      _id: req.params.meetingId,
-      organizationId: req.user.organizationId._id
-    }).populate('createdBy', 'fullName email');
-    
-    if (!meeting) {
-      return res.status(404).json({ error: 'Meeting not found' });
-    }
-    
-    // Generate QR code
-    const qrCode = await generateMeetingQRCode(meeting.accessCodes.publicCode);
-    
-    // Generate meeting links
-    const links = generateMeetingLinks(meeting._id, meeting.accessCodes.publicCode);
-    
-    // Get attendance statistics
-    const attendanceStats = await AttendanceRecord.aggregate([
-      {
-        $match: { meetingId: meeting._id }
-      },
-      {
-        $group: {
-          _id: '$status',
-          count: { $sum: 1 }
-        }
-      }
-    ]);
-    
-    // Get attendance by type
-    const attendanceByType = await AttendanceRecord.aggregate([
-      {
-        $match: { meetingId: meeting._id }
-      },
-      {
-        $group: {
-          _id: '$verificationType',
-          count: { $sum: 1 }
-        }
-      }
-    ]);
-    
-    // Get recent attendance
-    const recentAttendance = await AttendanceRecord.find({
-      meetingId: meeting._id
-    })
-    .sort({ createdAt: -1 })
-    .limit(10)
-    .select('attendeeInfo.fullName verificationType status createdAt')
-    .lean();
-    
-    // Update meeting with links
-    meeting.shareLinks = links;
-    await meeting.save();
-    
-    // Generate PWA manifest
-    const pwaManifest = generatePWAManifest(meeting, req.user.organizationId);
-    
-    res.json({
-      ...meeting.toObject(),
-      qrCode,
-      links,
-      statistics: {
-        attendanceStats,
-        attendanceByType,
-        recentAttendance,
-        totalAttendees: attendanceStats.reduce((sum, stat) => sum + stat.count, 0)
-      },
-      pwa: {
-        enabled: meeting.pwaSettings?.enablePWA !== false,
-        manifest: pwaManifest,
-        serviceWorker: generateServiceWorker()
-      }
-    });
-    
-  } catch (error) {
-    console.error('Get meeting details error:', error);
-    res.status(500).json({ error: 'Failed to fetch meeting details' });
-  }
-});
-
-
-// Enhanced API for setting/updating meeting location with validation
-app.post('/api/meetings/:meetingId/location', authenticateToken, async (req, res) => {
-  try {
-    const { name, latitude, longitude, address, radius } = req.body;
-    
-    // Validate location data
-    if (!latitude || !longitude) {
-      return res.status(400).json({ 
-        error: 'Location coordinates are required',
-        required: ['latitude', 'longitude']
-      });
-    }
-    
-    // Validate coordinate ranges
-    if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
-      return res.status(400).json({ 
-        error: 'Invalid coordinates',
-        details: 'Latitude must be between -90 and 90, Longitude between -180 and 180'
-      });
-    }
-    
-    // Validate radius
-    const validRadius = radius || 100;
-    if (validRadius < 10 || validRadius > 10000) {
-      return res.status(400).json({ 
-        error: 'Invalid radius',
-        details: 'Radius must be between 10 and 10,000 meters',
-        min: 10,
-        max: 10000,
-        recommended: 100
-      });
-    }
-    
-    const meeting = await Meeting.findOne({
-      _id: req.params.meetingId,
-      organizationId: req.user.organizationId._id
-    });
-    
-    if (!meeting) {
-      return res.status(404).json({ error: 'Meeting not found' });
-    }
-    
-    // Check for other meetings at same location/time to avoid conflicts
-    const conflictingMeetings = await Meeting.find({
-      _id: { $ne: meeting._id },
-      organizationId: req.user.organizationId._id,
-      'schedule.startTime': { $lt: meeting.schedule.endTime },
-      'schedule.endTime': { $gt: meeting.schedule.startTime },
-      'location.latitude': { $gte: latitude - 0.001, $lte: latitude + 0.001 },
-      'location.longitude': { $gte: longitude - 0.001, $lte: longitude + 0.001 }
-    });
-    
-    if (conflictingMeetings.length > 0) {
-      return res.status(409).json({
-        error: 'Location conflict detected',
-        details: 'Another meeting is scheduled at a nearby location around the same time',
-        conflicts: conflictingMeetings.map(m => ({
-          title: m.title,
-          time: moment(m.schedule.startTime).format('h:mm A'),
-          location: m.location.name
-        }))
-      });
-    }
-    
-    // Update meeting location
-    meeting.location = {
-      name: name || meeting.location.name,
-      latitude,
-      longitude,
-      address: address || meeting.location.address,
-      radius: validRadius,
-      // Store geohash for efficient location queries
-      geohash: generateGeohash(latitude, longitude)
-    };
-    
-    meeting.updatedAt = new Date();
-    await meeting.save();
-    
-    // Create audit log
-    await AuditLog.create({
-      organizationId: req.user.organizationId._id,
-      userId: req.user._id,
-      action: 'MEETING_LOCATION_UPDATED',
-      entityType: 'meeting',
-      entityId: meeting._id,
-      details: {
-        oldLocation: meeting.location,
-        newLocation: { name, latitude, longitude, address, radius: validRadius }
-      },
-      ipAddress: req.ip,
-      userAgent: req.get('User-Agent')
-    });
-    
-    res.json({
-      success: true,
-      message: 'Meeting location updated successfully',
-      location: meeting.location,
-      validation: {
-        coordinatesValid: true,
-        radiusValid: true,
-        noConflicts: true,
-        geohash: meeting.location.geohash
-      }
-    });
-    
-  } catch (error) {
-    console.error('Update location error:', error);
-    res.status(500).json({ 
-      error: 'Failed to update meeting location',
-      details: 'Please try again or contact support'
-    });
-  }
-});
-
-// Update meeting with custom form
-app.put('/api/meetings/:meetingId/form', authenticateToken, async (req, res) => {
-  try {
-    const { customFormFields, timeVerification, pwaSettings } = req.body;
-    
-    const meeting = await Meeting.findOne({
-      _id: req.params.meetingId,
-      organizationId: req.user.organizationId._id
-    });
-    
-    if (!meeting) {
-      return res.status(404).json({ error: 'Meeting not found' });
-    }
-    
-    // Update fields
-    const updates = { updatedAt: new Date() };
-    
-    if (customFormFields) {
-      updates.customFormFields = customFormFields;
-    }
-    
-    if (timeVerification) {
-      updates.timeVerification = {
-        ...meeting.timeVerification,
-        ...timeVerification
-      };
-    }
-    
-    if (pwaSettings) {
-      updates.pwaSettings = {
-        ...meeting.pwaSettings,
-        ...pwaSettings
-      };
-    }
-    
-    const updatedMeeting = await Meeting.findByIdAndUpdate(
-      meeting._id,
-      updates,
-      { new: true }
-    );
-    
-    await AuditLog.create({
-      organizationId: req.user.organizationId._id,
-      userId: req.user._id,
-      action: 'MEETING_FORM_UPDATED',
-      entityType: 'meeting',
-      entityId: meeting._id,
-      details: { 
-        customFormFields: customFormFields?.length || 0,
-        timeVerification: !!timeVerification,
-        pwaSettings: !!pwaSettings
-      },
-      ipAddress: req.ip,
-      userAgent: req.get('User-Agent')
-    });
-    
-    res.json(updatedMeeting);
-    
-  } catch (error) {
-    console.error('Update meeting form error:', error);
-    res.status(500).json({ error: 'Failed to update meeting form' });
-  }
-});
-
-// Get meeting form for attendees
-app.get('/api/meetings/:publicCode/form', async (req, res) => {
-  try {
-    const meeting = await Meeting.findOne({
-      'accessCodes.publicCode': req.params.publicCode,
-      status: { $in: ['active', 'in_progress'] }
-    }).populate('organizationId', 'name');
-    
-    if (!meeting) {
-      return res.status(404).json({ error: 'Meeting not found or not active' });
-    }
-    
-    // Check time window
-    const now = new Date();
-    if (now < meeting.schedule.attendanceStart || now > meeting.schedule.attendanceEnd) {
+    if (!req.user.permissions[permission]) {
       return res.status(403).json({ 
-        error: 'Attendance form not available at this time',
-        availableFrom: meeting.schedule.attendanceStart,
-        availableUntil: meeting.schedule.attendanceEnd
+        error: `Permission denied: ${permission}`,
+        code: 'PERMISSION_DENIED'
       });
     }
     
-    // Prepare form data
-    const formData = {
-      meeting: {
-        id: meeting._id,
-        title: meeting.title,
-        description: meeting.description,
-        organization: meeting.organizationId.name,
-        location: meeting.location
-      },
-      requiredFields: meeting.attendanceConfig.requiredFields || [],
-      customFormFields: meeting.customFormFields || [],
-      allowedModes: meeting.attendanceConfig.allowedModes,
-      timeVerification: meeting.timeVerification || {},
-      pwaEnabled: meeting.pwaSettings?.enablePWA !== false
-    };
-    
-    res.json(formData);
-    
-  } catch (error) {
-    console.error('Get meeting form error:', error);
-    res.status(500).json({ error: 'Failed to fetch meeting form' });
-  }
-});
-
-// Check organization access
-const checkOrganizationAccess = async (req, res, next) => {
-  const organizationId = req.params.organizationId || req.body.organizationId;
-  
-  if (!organizationId) {
-    return res.status(400).json({ error: 'Organization ID required' });
-  }
-  
-  if (req.user.organizationId._id.toString() !== organizationId.toString()) {
-    return res.status(403).json({ error: 'Access to this organization denied' });
-  }
-  
-  next();
+    next();
+  };
 };
 
-// Generate QR Code for meeting
-const generateMeetingQRCode = async (meetingCode) => {
-  const url = `${process.env.FRONTEND_URL || 'https://gsf-inky.vercel.app'}/attend/${meetingCode}`;
-  try {
-    const qrCode = await QRCode.toDataURL(url);
-    return qrCode;
-  } catch (error) {
-    console.error('QR Code generation error:', error);
-    return null;
-  }
-};
+// ================= ROUTES =================
 
-// Routes
+// ================= AUTHENTICATION ROUTES =================
 
-// 1. Authentication Routes
+/**
+ * @route POST /api/auth/register
+ * @desc Register new organization and super admin
+ * @access Public
+ */
 app.post('/api/auth/register', async (req, res) => {
   try {
-    const { email, password, fullName, phone, organizationName } = req.body;
+    const { email, password, fullName, phone, organizationName, contactEmail, contactPhone, address } = req.body;
+    
+    // Validation
+    if (!email || !password || !fullName || !organizationName) {
+      return res.status(400).json({ 
+        error: 'Missing required fields',
+        required: ['email', 'password', 'fullName', 'organizationName']
+      });
+    }
     
     // Check if user already exists
     const existingUser = await AdminUser.findOne({ email });
     if (existingUser) {
-      return res.status(400).json({ error: 'User already exists' });
+      return res.status(409).json({ 
+        error: 'User already exists',
+        code: 'USER_EXISTS'
+      });
     }
     
-    // Create organization (first user becomes super admin)
+    // Create organization
     const organization = await Organization.create({
       name: organizationName,
-      domain: email.split('@')[1]
+      domain: email.split('@')[1],
+      contactEmail: contactEmail || email,
+      contactPhone,
+      address
     });
     
     // Hash password
-    const hashedPassword = await bcrypt.hash(password, 10);
+    const hashedPassword = await bcrypt.hash(password, 12);
     
     // Create super admin user
     const user = await AdminUser.create({
@@ -1629,282 +2014,1121 @@ app.post('/api/auth/register', async (req, res) => {
         canDeleteMeetings: true,
         canViewReports: true,
         canManageAdmins: true,
-        canApproveAttendance: true
+        canApproveAttendance: true,
+        canExportData: true,
+        canAccessAnalytics: true,
+        canManageOrganization: true
       }
     });
     
     // Generate JWT token
     const token = jwt.sign(
-      { userId: user._id, role: user.role, organizationId: organization._id },
-      process.env.JWT_SECRET || 'your-secret-key',
-      { expiresIn: '24h' }
+      { 
+        userId: user._id, 
+        role: user.role, 
+        organizationId: organization._id,
+        email: user.email
+      },
+      process.env.JWT_SECRET || 'your-secret-key-change-in-production',
+      { expiresIn: '7d' }
     );
     
-    // Log the registration
+    // Create audit log
     await AuditLog.create({
       organizationId: organization._id,
       userId: user._id,
+      userEmail: user.email,
+      userRole: user.role,
       action: 'USER_REGISTERED',
-      entityType: 'user',
-      entityId: user._id,
-      details: { email, role: 'super_admin' },
+      entityType: 'organization',
+      entityId: organization._id,
+      entityName: organization.name,
+      details: {
+        email,
+        organizationName,
+        plan: 'free'
+      },
       ipAddress: req.ip,
-      userAgent: req.get('User-Agent')
+      userAgent: req.get('User-Agent'),
+      severity: 'info'
     });
     
+    // Send welcome notification
+    await sendNotification(
+      user._id,
+      'Welcome to GSAMS!',
+      `Your organization "${organizationName}" has been successfully registered.`,
+      {
+        organizationId: organization._id,
+        organizationName
+      },
+      'system'
+    );
+    
     res.status(201).json({
+      success: true,
       token,
       user: {
         id: user._id,
         email: user.email,
         fullName: user.fullName,
         role: user.role,
-        organization: {
-          id: organization._id,
-          name: organization.name
-        }
+        avatar: user.avatar,
+        permissions: user.permissions
+      },
+      organization: {
+        id: organization._id,
+        name: organization.name,
+        domain: organization.domain,
+        settings: organization.settings,
+        subscription: organization.subscription
       }
     });
   } catch (error) {
     console.error('Registration error:', error);
-    res.status(500).json({ error: 'Registration failed' });
+    
+    // Handle duplicate key errors
+    if (error.code === 11000) {
+      return res.status(409).json({ 
+        error: 'Organization or user already exists',
+        code: 'DUPLICATE_ENTRY'
+      });
+    }
+    
+    // Handle validation errors
+    if (error.name === 'ValidationError') {
+      const errors = Object.values(error.errors).map(err => err.message);
+      return res.status(400).json({ 
+        error: 'Validation failed',
+        details: errors,
+        code: 'VALIDATION_ERROR'
+      });
+    }
+    
+    res.status(500).json({ 
+      error: 'Registration failed',
+      code: 'REGISTRATION_FAILED'
+    });
   }
 });
 
+/**
+ * @route POST /api/auth/login
+ * @desc Login user
+ * @access Public
+ */
 app.post('/api/auth/login', async (req, res) => {
   try {
     const { email, password } = req.body;
     
-    // Find user
-    const user = await AdminUser.findOne({ email }).populate('organizationId');
-    if (!user) {
-      return res.status(401).json({ error: 'Invalid credentials' });
+    // Validation
+    if (!email || !password) {
+      return res.status(400).json({ 
+        error: 'Email and password are required',
+        code: 'MISSING_CREDENTIALS'
+      });
     }
     
-    // Check if user is active
+    // Find user
+    const user = await AdminUser.findOne({ email })
+      .populate('organizationId')
+      .select('+password +loginAttempts +lockUntil');
+    
+    if (!user) {
+      return res.status(401).json({ 
+        error: 'Invalid credentials',
+        code: 'INVALID_CREDENTIALS'
+      });
+    }
+    
+    // Check if account is locked
+    if (user.lockUntil && user.lockUntil > Date.now()) {
+      const lockMinutes = Math.ceil((user.lockUntil - Date.now()) / (1000 * 60));
+      return res.status(423).json({ 
+        error: `Account is locked. Try again in ${lockMinutes} minutes.`,
+        code: 'ACCOUNT_LOCKED',
+        lockMinutes
+      });
+    }
+    
+    // Check if account is active
     if (!user.isActive) {
-      return res.status(401).json({ error: 'Account is deactivated' });
+      return res.status(401).json({ 
+        error: 'Account is deactivated',
+        code: 'ACCOUNT_DEACTIVATED'
+      });
     }
     
     // Verify password
     const validPassword = await bcrypt.compare(password, user.password);
     if (!validPassword) {
-      return res.status(401).json({ error: 'Invalid credentials' });
+      // Increment login attempts
+      user.loginAttempts += 1;
+      
+      // Lock account after 5 failed attempts for 15 minutes
+      if (user.loginAttempts >= 5) {
+        user.lockUntil = Date.now() + 15 * 60 * 1000; // 15 minutes
+        user.loginAttempts = 0;
+      }
+      
+      await user.save();
+      
+      return res.status(401).json({ 
+        error: 'Invalid credentials',
+        code: 'INVALID_CREDENTIALS',
+        attemptsRemaining: 5 - user.loginAttempts
+      });
     }
     
-    // Update last login
+    // Reset login attempts on successful login
+    user.loginAttempts = 0;
+    user.lockUntil = undefined;
     user.lastLogin = new Date();
+    user.lastActivity = new Date();
     await user.save();
     
     // Generate JWT token
     const token = jwt.sign(
-      { userId: user._id, role: user.role, organizationId: user.organizationId._id },
-      process.env.JWT_SECRET || 'your-secret-key',
-      { expiresIn: '24h' }
+      { 
+        userId: user._id, 
+        role: user.role, 
+        organizationId: user.organizationId._id,
+        email: user.email
+      },
+      process.env.JWT_SECRET || 'your-secret-key-change-in-production',
+      { expiresIn: '7d' }
     );
     
-    // Log the login
+    // Create audit log
     await AuditLog.create({
       organizationId: user.organizationId._id,
       userId: user._id,
+      userEmail: user.email,
+      userRole: user.role,
       action: 'USER_LOGIN',
       entityType: 'user',
       entityId: user._id,
-      details: { email },
+      entityName: user.fullName,
+      details: {
+        loginMethod: 'email',
+        ipAddress: req.ip
+      },
       ipAddress: req.ip,
-      userAgent: req.get('User-Agent')
+      userAgent: req.get('User-Agent'),
+      severity: 'info'
     });
     
     res.json({
+      success: true,
       token,
       user: {
         id: user._id,
         email: user.email,
         fullName: user.fullName,
         role: user.role,
-        organization: {
-          id: user.organizationId._id,
-          name: user.organizationId.name
-        },
-        permissions: user.permissions
+        avatar: user.avatar,
+        permissions: user.permissions,
+        lastLogin: user.lastLogin
+      },
+      organization: {
+        id: user.organizationId._id,
+        name: user.organizationId.name,
+        domain: user.organizationId.domain,
+        settings: user.organizationId.settings,
+        subscription: user.organizationId.subscription
       }
     });
   } catch (error) {
     console.error('Login error:', error);
-    res.status(500).json({ error: 'Login failed' });
+    res.status(500).json({ 
+      error: 'Login failed',
+      code: 'LOGIN_FAILED'
+    });
   }
 });
 
-// 2. Organization Routes
-app.get('/api/organization', authenticateToken, async (req, res) => {
+/**
+ * @route GET /api/auth/me
+ * @desc Get current user profile
+ * @access Private
+ */
+app.get('/api/auth/me', authenticateToken, async (req, res) => {
   try {
-    const organization = await Organization.findById(req.user.organizationId._id);
-    res.json(organization);
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch organization' });
-  }
-});
-
-app.put('/api/organization/settings', authenticateToken, isSuperAdmin, async (req, res) => {
-  try {
-    const { settings } = req.body;
-    const organization = await Organization.findByIdAndUpdate(
-      req.user.organizationId._id,
-      { $set: { settings } },
-      { new: true }
-    );
+    const user = await AdminUser.findById(req.user._id)
+      .populate('organizationId')
+      .select('-password -resetPasswordToken -resetPasswordExpires -twoFactorSecret');
     
+    res.json({
+      success: true,
+      user: {
+        id: user._id,
+        email: user.email,
+        fullName: user.fullName,
+        role: user.role,
+        avatar: user.avatar,
+        phone: user.phone,
+        isActive: user.isActive,
+        lastLogin: user.lastLogin,
+        lastActivity: user.lastActivity,
+        permissions: user.permissions,
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt
+      },
+      organization: {
+        id: user.organizationId._id,
+        name: user.organizationId.name,
+        domain: user.organizationId.domain,
+        contactEmail: user.organizationId.contactEmail,
+        contactPhone: user.organizationId.contactPhone,
+        address: user.organizationId.address,
+        settings: user.organizationId.settings,
+        subscription: user.organizationId.subscription,
+        createdAt: user.organizationId.createdAt
+      }
+    });
+  } catch (error) {
+    console.error('Get profile error:', error);
+    res.status(500).json({ 
+      error: 'Failed to get profile',
+      code: 'PROFILE_FETCH_FAILED'
+    });
+  }
+});
+
+/**
+ * @route PUT /api/auth/profile
+ * @desc Update user profile
+ * @access Private
+ */
+app.put('/api/auth/profile', authenticateToken, async (req, res) => {
+  try {
+    const { fullName, phone, avatar } = req.body;
+    
+    const updates = {};
+    if (fullName !== undefined) updates.fullName = fullName;
+    if (phone !== undefined) updates.phone = phone;
+    if (avatar !== undefined) updates.avatar = avatar;
+    
+    const user = await AdminUser.findByIdAndUpdate(
+      req.user._id,
+      { ...updates, updatedAt: new Date() },
+      { new: true, runValidators: true }
+    ).select('-password -resetPasswordToken -resetPasswordExpires -twoFactorSecret');
+    
+    // Create audit log
     await AuditLog.create({
       organizationId: req.user.organizationId._id,
       userId: req.user._id,
-      action: 'ORGANIZATION_SETTINGS_UPDATED',
-      entityType: 'organization',
-      entityId: organization._id,
-      details: { settings },
+      userEmail: req.user.email,
+      userRole: req.user.role,
+      action: 'PROFILE_UPDATED',
+      entityType: 'user',
+      entityId: user._id,
+      entityName: user.fullName,
+      details: updates,
       ipAddress: req.ip,
-      userAgent: req.get('User-Agent')
+      userAgent: req.get('User-Agent'),
+      severity: 'info'
     });
     
-    res.json(organization);
+    res.json({
+      success: true,
+      user: {
+        id: user._id,
+        email: user.email,
+        fullName: user.fullName,
+        role: user.role,
+        avatar: user.avatar,
+        phone: user.phone,
+        updatedAt: user.updatedAt
+      }
+    });
   } catch (error) {
-    res.status(500).json({ error: 'Failed to update settings' });
+    console.error('Update profile error:', error);
+    
+    if (error.name === 'ValidationError') {
+      const errors = Object.values(error.errors).map(err => err.message);
+      return res.status(400).json({ 
+        error: 'Validation failed',
+        details: errors,
+        code: 'VALIDATION_ERROR'
+      });
+    }
+    
+    res.status(500).json({ 
+      error: 'Failed to update profile',
+      code: 'PROFILE_UPDATE_FAILED'
+    });
   }
 });
 
-// 3. Meeting Routes
-app.post('/api/meetings', authenticateToken, async (req, res) => {
+/**
+ * @route POST /api/auth/change-password
+ * @desc Change user password
+ * @access Private
+ */
+app.post('/api/auth/change-password', authenticateToken, async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ 
+        error: 'Current password and new password are required',
+        code: 'MISSING_PASSWORDS'
+      });
+    }
+    
+    if (newPassword.length < 8) {
+      return res.status(400).json({ 
+        error: 'New password must be at least 8 characters',
+        code: 'PASSWORD_TOO_SHORT'
+      });
+    }
+    
+    const user = await AdminUser.findById(req.user._id).select('+password');
+    
+    // Verify current password
+    const validPassword = await bcrypt.compare(currentPassword, user.password);
+    if (!validPassword) {
+      return res.status(401).json({ 
+        error: 'Current password is incorrect',
+        code: 'INCORRECT_PASSWORD'
+      });
+    }
+    
+    // Hash new password
+    const hashedPassword = await bcrypt.hash(newPassword, 12);
+    user.password = hashedPassword;
+    user.updatedAt = new Date();
+    await user.save();
+    
+    // Create audit log
+    await AuditLog.create({
+      organizationId: req.user.organizationId._id,
+      userId: req.user._id,
+      userEmail: req.user.email,
+      userRole: req.user.role,
+      action: 'PASSWORD_CHANGED',
+      entityType: 'user',
+      entityId: user._id,
+      entityName: user.fullName,
+      details: {},
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+      severity: 'info'
+    });
+    
+    res.json({
+      success: true,
+      message: 'Password changed successfully'
+    });
+  } catch (error) {
+    console.error('Change password error:', error);
+    res.status(500).json({ 
+      error: 'Failed to change password',
+      code: 'PASSWORD_CHANGE_FAILED'
+    });
+  }
+});
+
+/**
+ * @route POST /api/auth/forgot-password
+ * @desc Request password reset
+ * @access Public
+ */
+app.post('/api/auth/forgot-password', async (req, res) => {
+  try {
+    const { email } = req.body;
+    
+    if (!email) {
+      return res.status(400).json({ 
+        error: 'Email is required',
+        code: 'EMAIL_REQUIRED'
+      });
+    }
+    
+    const user = await AdminUser.findOne({ email });
+    if (!user) {
+      // Don't reveal that user doesn't exist
+      return res.json({
+        success: true,
+        message: 'If an account exists with this email, you will receive a password reset link'
+      });
+    }
+    
+    // Generate reset token
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const resetTokenHash = crypto.createHash('sha256').update(resetToken).digest('hex');
+    
+    user.resetPasswordToken = resetTokenHash;
+    user.resetPasswordExpires = Date.now() + 3600000; // 1 hour
+    await user.save();
+    
+    // In production, send email with reset link
+    const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/reset-password/${resetToken}`;
+    
+    console.log('Password reset URL:', resetUrl); // For development
+    
+    // Create audit log
+    await AuditLog.create({
+      organizationId: user.organizationId,
+      userId: user._id,
+      userEmail: user.email,
+      userRole: user.role,
+      action: 'PASSWORD_RESET_REQUESTED',
+      entityType: 'user',
+      entityId: user._id,
+      entityName: user.fullName,
+      details: { resetToken: resetTokenHash },
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+      severity: 'info'
+    });
+    
+    res.json({
+      success: true,
+      message: 'If an account exists with this email, you will receive a password reset link'
+    });
+  } catch (error) {
+    console.error('Forgot password error:', error);
+    res.status(500).json({ 
+      error: 'Failed to process password reset request',
+      code: 'PASSWORD_RESET_FAILED'
+    });
+  }
+});
+
+/**
+ * @route POST /api/auth/reset-password/:token
+ * @desc Reset password with token
+ * @access Public
+ */
+app.post('/api/auth/reset-password/:token', async (req, res) => {
+  try {
+    const { token } = req.params;
+    const { password } = req.body;
+    
+    if (!password || password.length < 8) {
+      return res.status(400).json({ 
+        error: 'Password must be at least 8 characters',
+        code: 'PASSWORD_TOO_SHORT'
+      });
+    }
+    
+    // Hash the token
+    const resetTokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    
+    // Find user with valid reset token
+    const user = await AdminUser.findOne({
+      resetPasswordToken: resetTokenHash,
+      resetPasswordExpires: { $gt: Date.now() }
+    });
+    
+    if (!user) {
+      return res.status(400).json({ 
+        error: 'Invalid or expired reset token',
+        code: 'INVALID_RESET_TOKEN'
+      });
+    }
+    
+    // Hash new password
+    const hashedPassword = await bcrypt.hash(password, 12);
+    user.password = hashedPassword;
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpires = undefined;
+    user.updatedAt = new Date();
+    await user.save();
+    
+    // Create audit log
+    await AuditLog.create({
+      organizationId: user.organizationId,
+      userId: user._id,
+      userEmail: user.email,
+      userRole: user.role,
+      action: 'PASSWORD_RESET_COMPLETED',
+      entityType: 'user',
+      entityId: user._id,
+      entityName: user.fullName,
+      details: {},
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+      severity: 'info'
+    });
+    
+    res.json({
+      success: true,
+      message: 'Password has been reset successfully'
+    });
+  } catch (error) {
+    console.error('Reset password error:', error);
+    res.status(500).json({ 
+      error: 'Failed to reset password',
+      code: 'PASSWORD_RESET_FAILED'
+    });
+  }
+});
+
+// ================= ORGANIZATION ROUTES =================
+
+/**
+ * @route GET /api/organization
+ * @desc Get organization details
+ * @access Private
+ */
+app.get('/api/organization', authenticateToken, async (req, res) => {
+  try {
+    const organization = await Organization.findById(req.user.organizationId._id);
+    
+    res.json({
+      success: true,
+      organization
+    });
+  } catch (error) {
+    console.error('Get organization error:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch organization',
+      code: 'ORGANIZATION_FETCH_FAILED'
+    });
+  }
+});
+
+/**
+ * @route PUT /api/organization
+ * @desc Update organization details
+ * @access Private (Super Admin or canManageOrganization permission)
+ */
+app.put('/api/organization', authenticateToken, checkPermission('canManageOrganization'), async (req, res) => {
+  try {
+    const { name, contactEmail, contactPhone, address, settings } = req.body;
+    
+    const updates = {};
+    if (name !== undefined) updates.name = name;
+    if (contactEmail !== undefined) updates.contactEmail = contactEmail;
+    if (contactPhone !== undefined) updates.contactPhone = contactPhone;
+    if (address !== undefined) updates.address = address;
+    if (settings !== undefined) updates.settings = { ...req.user.organizationId.settings, ...settings };
+    
+    const organization = await Organization.findByIdAndUpdate(
+      req.user.organizationId._id,
+      { ...updates, updatedAt: new Date() },
+      { new: true, runValidators: true }
+    );
+    
+    // Create audit log
+    await AuditLog.create({
+      organizationId: organization._id,
+      userId: req.user._id,
+      userEmail: req.user.email,
+      userRole: req.user.role,
+      action: 'ORGANIZATION_UPDATED',
+      entityType: 'organization',
+      entityId: organization._id,
+      entityName: organization.name,
+      details: updates,
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+      severity: 'info'
+    });
+    
+    res.json({
+      success: true,
+      organization
+    });
+  } catch (error) {
+    console.error('Update organization error:', error);
+    
+    if (error.name === 'ValidationError') {
+      const errors = Object.values(error.errors).map(err => err.message);
+      return res.status(400).json({ 
+        error: 'Validation failed',
+        details: errors,
+        code: 'VALIDATION_ERROR'
+      });
+    }
+    
+    res.status(500).json({ 
+      error: 'Failed to update organization',
+      code: 'ORGANIZATION_UPDATE_FAILED'
+    });
+  }
+});
+
+/**
+ * @route GET /api/organization/stats
+ * @desc Get organization statistics
+ * @access Private
+ */
+app.get('/api/organization/stats', authenticateToken, async (req, res) => {
+  try {
+    const now = new Date();
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    
+    // Get counts using aggregation
+    const stats = await Promise.all([
+      // Total meetings
+      Meeting.countDocuments({ 
+        organizationId: req.user.organizationId._id,
+        deletedAt: null 
+      }),
+      
+      // Active meetings
+      Meeting.countDocuments({ 
+        organizationId: req.user.organizationId._id,
+        status: 'in_progress',
+        deletedAt: null 
+      }),
+      
+      // Upcoming meetings
+      Meeting.countDocuments({ 
+        organizationId: req.user.organizationId._id,
+        status: { $in: ['draft', 'scheduled', 'active'] },
+        'schedule.startTime': { $gt: now },
+        deletedAt: null 
+      }),
+      
+      // Total attendance (last 30 days)
+      AttendanceRecord.countDocuments({ 
+        organizationId: req.user.organizationId._id,
+        createdAt: { $gte: thirtyDaysAgo },
+        deletedAt: null 
+      }),
+      
+      // Today's attendance
+      AttendanceRecord.countDocuments({ 
+        organizationId: req.user.organizationId._id,
+        createdAt: { 
+          $gte: new Date(now.setHours(0, 0, 0, 0)),
+          $lte: new Date(now.setHours(23, 59, 59, 999))
+        },
+        deletedAt: null 
+      }),
+      
+      // Attendance by type
+      AttendanceRecord.aggregate([
+        {
+          $match: {
+            organizationId: req.user.organizationId._id,
+            createdAt: { $gte: thirtyDaysAgo },
+            deletedAt: null
+          }
+        },
+        {
+          $group: {
+            _id: '$verificationType',
+            count: { $sum: 1 }
+          }
+        }
+      ]),
+      
+      // Recent activity
+      AuditLog.find({
+        organizationId: req.user.organizationId._id
+      })
+      .sort({ timestamp: -1 })
+      .limit(10)
+      .populate('userId', 'fullName email')
+      .lean()
+    ]);
+    
+    const [totalMeetings, activeMeetings, upcomingMeetings, totalAttendance, todayAttendance, byType, recentActivity] = stats;
+    
+    res.json({
+      success: true,
+      stats: {
+        totalMeetings,
+        activeMeetings,
+        upcomingMeetings,
+        totalAttendance,
+        todayAttendance,
+        byType: byType.reduce((acc, item) => {
+          acc[item._id] = item.count;
+          return acc;
+        }, {}),
+        recentActivity
+      }
+    });
+  } catch (error) {
+    console.error('Get organization stats error:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch organization statistics',
+      code: 'STATS_FETCH_FAILED'
+    });
+  }
+});
+
+// ================= MEETING ROUTES =================
+
+/**
+ * @route POST /api/meetings
+ * @desc Create a new meeting
+ * @access Private (canCreateMeetings permission)
+ */
+app.post('/api/meetings', authenticateToken, checkPermission('canCreateMeetings'), async (req, res) => {
   try {
     const {
       title,
       description,
+      category,
+      tags,
       location,
       schedule,
-      attendanceConfig
+      attendanceConfig,
+      customFormFields,
+      timeVerification,
+      notifications,
+      maxAttendees,
+      isPrivate,
+      requiresApproval
     } = req.body;
 
-    // Validate location data
-    if (!location || !location.latitude || !location.longitude) {
-      return res.status(400).json({
-        error: 'Meeting location is required',
-        details: 'Please provide latitude and longitude for the meeting venue'
+    // Validation
+    if (!title || !location || !schedule || !schedule.startTime || !schedule.endTime) {
+      return res.status(400).json({ 
+        error: 'Missing required fields',
+        required: ['title', 'location', 'schedule.startTime', 'schedule.endTime'],
+        code: 'MISSING_REQUIRED_FIELDS'
       });
     }
 
+    // Validate location
+    if (!location.latitude || !location.longitude) {
+      return res.status(400).json({ 
+        error: 'Location coordinates are required',
+        code: 'LOCATION_COORDINATES_REQUIRED'
+      });
+    }
 
-    // Validate coordinates
     if (location.latitude < -90 || location.latitude > 90 || 
         location.longitude < -180 || location.longitude > 180) {
-      return res.status(400).json({
+      return res.status(400).json({ 
         error: 'Invalid coordinates',
-        details: 'Latitude must be between -90 and 90, Longitude between -180 and 180'
+        code: 'INVALID_COORDINATES'
       });
     }
 
-      // Validate radius
+    // Validate radius
     const radius = location.radius || req.user.organizationId.settings.defaultLocationRadius;
     if (radius < 10 || radius > 10000) {
-      return res.status(400).json({
-        error: 'Invalid radius',
-        details: 'Radius must be between 10 and 10,000 meters',
-        recommended: req.user.organizationId.settings.defaultLocationRadius
+      return res.status(400).json({ 
+        error: 'Radius must be between 10 and 10,000 meters',
+        code: 'INVALID_RADIUS'
       });
     }
+
+    // Validate time
+    const startTime = new Date(schedule.startTime);
+    const endTime = new Date(schedule.endTime);
     
+    if (startTime >= endTime) {
+      return res.status(400).json({ 
+        error: 'Start time must be before end time',
+        code: 'INVALID_TIME_RANGE'
+      });
+    }
+
+    // Check for overlapping meetings at same location
+    const overlappingMeetings = await Meeting.find({
+      organizationId: req.user.organizationId._id,
+      status: { $in: ['scheduled', 'active', 'in_progress'] },
+      'schedule.startTime': { $lt: endTime },
+      'schedule.endTime': { $gt: startTime },
+      'location.latitude': { $gte: location.latitude - 0.001, $lte: location.latitude + 0.001 },
+      'location.longitude': { $gte: location.longitude - 0.001, $lte: location.longitude + 0.001 },
+      deletedAt: null
+    });
+
+    if (overlappingMeetings.length > 0) {
+      return res.status(409).json({
+        error: 'Location conflict detected',
+        details: 'Another meeting is scheduled at a nearby location around the same time',
+        conflicts: overlappingMeetings.map(m => ({
+          id: m._id,
+          title: m.title,
+          time: moment(m.schedule.startTime).format('h:mm A'),
+          location: m.location.name
+        })),
+        code: 'LOCATION_CONFLICT'
+      });
+    }
+
+    // Check organization limits
+    const meetingCount = await Meeting.countDocuments({
+      organizationId: req.user.organizationId._id,
+      deletedAt: null
+    });
+
+    const maxMeetings = req.user.organizationId.subscription?.maxMeetings || 10;
+    if (meetingCount >= maxMeetings) {
+      return res.status(403).json({
+        error: 'Meeting limit reached',
+        details: `Maximum ${maxMeetings} meetings allowed on your plan`,
+        current: meetingCount,
+        max: maxMeetings,
+        code: 'MEETING_LIMIT_REACHED'
+      });
+    }
+
     // Generate unique codes
-    const publicCode = generateAccessCode();
-    const smsCode = `MTG-${generateAccessCode().slice(0, 4)}`;
-    const ussdCode = generateAccessCode().slice(0, 6);
-    
-    const meeting = await Meeting.create({
+    let publicCode, smsCode, ussdCode;
+    let codesAreUnique = false;
+    let attempts = 0;
+    const maxAttempts = 10;
+
+    while (!codesAreUnique && attempts < maxAttempts) {
+      publicCode = generateAccessCode(8);
+      smsCode = `MTG-${generateAccessCode(4)}`;
+      ussdCode = generateAccessCode(6);
+
+      // Check if codes are unique
+      const existingCodes = await Meeting.find({
+        $or: [
+          { 'accessCodes.publicCode': publicCode },
+          { 'accessCodes.smsCode': smsCode },
+          { 'accessCodes.ussdCode': ussdCode }
+        ]
+      });
+
+      if (existingCodes.length === 0) {
+        codesAreUnique = true;
+      }
+      attempts++;
+    }
+
+    if (!codesAreUnique) {
+      return res.status(500).json({
+        error: 'Failed to generate unique access codes',
+        code: 'CODE_GENERATION_FAILED'
+      });
+    }
+
+    // Generate geohash
+    const geohash = generateGeohash(location.latitude, location.longitude);
+
+    // Create meeting
+    const meetingData = {
       organizationId: req.user.organizationId._id,
       createdBy: req.user._id,
       title,
       description,
+      category: category || 'meeting',
+      tags: tags || [],
       location: {
         ...location,
-        radius: location.radius || req.user.organizationId.settings.defaultLocationRadius
+        radius,
+        geohash
       },
       schedule: {
-        ...schedule,
+        startTime,
+        endTime,
         attendanceStart: schedule.attendanceStart || 
-          new Date(new Date(schedule.startTime).getTime() - (schedule.bufferBefore || 30) * 60000),
+          new Date(startTime.getTime() - (schedule.bufferBefore || 30) * 60000),
         attendanceEnd: schedule.attendanceEnd || 
-          new Date(new Date(schedule.endTime).getTime() + (schedule.bufferAfter || 30) * 60000)
+          new Date(endTime.getTime() + (schedule.bufferAfter || 30) * 60000),
+        bufferBefore: schedule.bufferBefore || 30,
+        bufferAfter: schedule.bufferAfter || 30,
+        recurrence: schedule.recurrence || { type: 'none' }
       },
-      // ADD THESE:
-        customFormFields: req.body.customFormFields || [],
-        timeVerification: req.body.timeVerification || {
-          requireMinimumStay: false,
-          minimumStayMinutes: 5,
-          enableContinuousMonitoring: false,
-          monitoringInterval: 5,
-          maxAllowedAbsence: 2,
-          autoVerifyAfterStay: false,
-          autoVerifyMinutes: 10
+      attendanceConfig: {
+        allowedModes: {
+          smartphoneGPS: attendanceConfig?.allowedModes?.smartphoneGPS ?? req.user.organizationId.settings.allowGPS,
+          sms: attendanceConfig?.allowedModes?.sms ?? req.user.organizationId.settings.allowSMS,
+          ussd: attendanceConfig?.allowedModes?.ussd ?? req.user.organizationId.settings.allowUSSD,
+          kiosk: attendanceConfig?.allowedModes?.kiosk ?? req.user.organizationId.settings.allowKiosk,
+          manual: attendanceConfig?.allowedModes?.manual ?? req.user.organizationId.settings.allowManual
         },
-        pwaSettings: req.body.pwaSettings || {
-          enablePWA: true,
-          appName: 'GSAMS Attendance',
-          themeColor: '#2196F3',
-          backgroundColor: '#ffffff'
-        },
-      attendanceConfig: attendanceConfig || {
-        allowedModes: req.user.organizationId.settings,
-        requiredFields: [{ field: 'fullName', isRequired: true }],
-        verificationStrictness: 'medium',
+        requiredFields: attendanceConfig?.requiredFields || [{ field: 'fullName', isRequired: true }],
+        verificationStrictness: attendanceConfig?.verificationStrictness || 'medium',
         duplicatePrevention: {
-          preventSameDevice: true,
-          preventSamePhone: true,
-          preventSameNameTime: true,
-          timeWindowMinutes: 5
+          preventSameDevice: attendanceConfig?.duplicatePrevention?.preventSameDevice ?? true,
+          preventSamePhone: attendanceConfig?.duplicatePrevention?.preventSamePhone ?? true,
+          preventSameNameTime: attendanceConfig?.duplicatePrevention?.preventSameNameTime ?? true,
+          preventSameIP: attendanceConfig?.duplicatePrevention?.preventSameIP ?? false,
+          timeWindowMinutes: attendanceConfig?.duplicatePrevention?.timeWindowMinutes || 5
         },
         timeRequirement: {
-          minimumMinutes: 15,
-          enableTimeTrack: false,
-          maxAbsenceMinutes: 5
+          minimumMinutes: attendanceConfig?.timeRequirement?.minimumMinutes || 15,
+          enableTimeTrack: attendanceConfig?.timeRequirement?.enableTimeTrack || false,
+          maxAbsenceMinutes: attendanceConfig?.timeRequirement?.maxAbsenceMinutes || 5
+        },
+        autoApprove: {
+          enabled: attendanceConfig?.autoApprove?.enabled || false,
+          confidenceThreshold: attendanceConfig?.autoApprove?.confidenceThreshold || 80,
+          afterMinutes: attendanceConfig?.autoApprove?.afterMinutes || 5
         }
       },
       accessCodes: {
         publicCode,
         smsCode,
-        ussdCode
+        ussdCode,
+        adminCode: generateAccessCode(10)
       },
+      customFormFields: customFormFields || [],
+      timeVerification: timeVerification || {
+        requireMinimumStay: false,
+        minimumStayMinutes: 5,
+        enableContinuousMonitoring: false,
+        monitoringInterval: 5,
+        maxAllowedAbsence: 2,
+        autoVerifyAfterStay: false,
+        autoVerifyMinutes: 10
+      },
+      notifications: notifications || {
+        sendReminders: true,
+        reminderMinutes: 60,
+        sendStartAlert: true,
+        sendSummary: true,
+        summaryRecipients: [req.user.email]
+      },
+      maxAttendees: maxAttendees || null,
+      isPrivate: isPrivate || false,
+      requiresApproval: requiresApproval || false,
       status: 'draft'
-    });
-    
+    };
+
+    const meeting = await Meeting.create(meetingData);
+
     // Generate QR code
     const qrCode = await generateMeetingQRCode(publicCode);
     
+    // Generate meeting links
+    const links = generateMeetingLinks(meeting._id, publicCode);
+    
+    // Update meeting with links
+    meeting.shareLinks = links;
+    await meeting.save();
+
+    // Create audit log
     await AuditLog.create({
       organizationId: req.user.organizationId._id,
       userId: req.user._id,
+      userEmail: req.user.email,
+      userRole: req.user.role,
       action: 'MEETING_CREATED',
       entityType: 'meeting',
       entityId: meeting._id,
-      details: { title, publicCode },
+      entityName: meeting.title,
+      details: {
+        title,
+        publicCode,
+        location: meeting.location.name,
+        startTime: meeting.schedule.startTime,
+        attendeesExpected: maxAttendees
+      },
       ipAddress: req.ip,
-      userAgent: req.get('User-Agent')
+      userAgent: req.get('User-Agent'),
+      severity: 'info'
     });
-    
+
+    // Send notification to organization admins
+    const admins = await AdminUser.find({
+      organizationId: req.user.organizationId._id,
+      isActive: true,
+      'permissions.canViewReports': true
+    });
+
+    for (const admin of admins) {
+      if (admin._id.toString() !== req.user._id.toString()) {
+        await sendNotification(
+          admin._id,
+          'New Meeting Created',
+          `${req.user.fullName} created a new meeting: "${meeting.title}"`,
+          {
+            meetingId: meeting._id,
+            meetingTitle: meeting.title,
+            createdBy: req.user.fullName,
+            startTime: meeting.schedule.startTime,
+            organizationId: req.user.organizationId._id
+          },
+          'meeting'
+        );
+      }
+    }
+
     res.status(201).json({
-      ...meeting.toObject(),
-      qrCode
+      success: true,
+      meeting: {
+        ...meeting.toObject(),
+        qrCode,
+        links,
+        createdBy: {
+          id: req.user._id,
+          fullName: req.user.fullName,
+          email: req.user.email
+        }
+      }
     });
   } catch (error) {
     console.error('Create meeting error:', error);
-    res.status(500).json({ error: 'Failed to create meeting' });
+    
+    if (error.name === 'ValidationError') {
+      const errors = Object.values(error.errors).map(err => err.message);
+      return res.status(400).json({ 
+        error: 'Validation failed',
+        details: errors,
+        code: 'VALIDATION_ERROR'
+      });
+    }
+    
+    if (error.code === 11000) {
+      return res.status(409).json({ 
+        error: 'Duplicate access code detected',
+        code: 'DUPLICATE_CODE'
+      });
+    }
+    
+    res.status(500).json({ 
+      error: 'Failed to create meeting',
+      code: 'MEETING_CREATION_FAILED'
+    });
   }
 });
 
+/**
+ * @route GET /api/meetings
+ * @desc Get all meetings for organization
+ * @access Private
+ */
 app.get('/api/meetings', authenticateToken, async (req, res) => {
   try {
-    const { status, startDate, endDate } = req.query;
+    const { 
+      status, 
+      startDate, 
+      endDate, 
+      category, 
+      search, 
+      page = 1, 
+      limit = 20,
+      sortBy = 'schedule.startTime',
+      sortOrder = 'desc'
+    } = req.query;
     
     const query = {
-      organizationId: req.user.organizationId._id
+      organizationId: req.user.organizationId._id,
+      deletedAt: null
     };
     
-    if (status) query.status = status;
+    // Apply filters
+    if (status) {
+      if (status === 'upcoming') {
+        query.status = { $in: ['draft', 'scheduled', 'active'] };
+        query['schedule.startTime'] = { $gt: new Date() };
+      } else if (status === 'past') {
+        query['schedule.endTime'] = { $lt: new Date() };
+      } else if (status === 'active_now') {
+        const now = new Date();
+        query.$or = [
+          { status: 'in_progress' },
+          { 
+            status: 'active',
+            'schedule.startTime': { $lte: now },
+            'schedule.endTime': { $gte: now }
+          }
+        ];
+      } else {
+        query.status = status;
+      }
+    }
+    
     if (startDate && endDate) {
       query['schedule.startTime'] = {
         $gte: new Date(startDate),
@@ -1912,185 +3136,577 @@ app.get('/api/meetings', authenticateToken, async (req, res) => {
       };
     }
     
-    const meetings = await Meeting.find(query)
-      .populate('createdBy', 'fullName email')
-      .sort({ 'schedule.startTime': -1 });
+    if (category) {
+      query.category = category;
+    }
     
-    res.json(meetings);
+    if (search) {
+      query.$or = [
+        { title: { $regex: search, $options: 'i' } },
+        { description: { $regex: search, $options: 'i' } },
+        { 'location.name': { $regex: search, $options: 'i' } }
+      ];
+    }
+    
+    // Calculate pagination
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    
+    // Get meetings with pagination
+    const meetings = await Meeting.find(query)
+      .populate('createdBy', 'fullName email avatar')
+      .sort({ [sortBy]: sortOrder === 'desc' ? -1 : 1 })
+      .skip(skip)
+      .limit(parseInt(limit))
+      .lean();
+    
+    // Get total count
+    const total = await Meeting.countDocuments(query);
+    
+    // Enrich with attendance counts
+    for (const meeting of meetings) {
+      const attendanceCounts = await AttendanceRecord.aggregate([
+        {
+          $match: { 
+            meetingId: meeting._id,
+            deletedAt: null
+          }
+        },
+        {
+          $group: {
+            _id: '$status',
+            count: { $sum: 1 }
+          }
+        }
+      ]);
+      
+      meeting.attendanceSummary = {
+        total: attendanceCounts.reduce((sum, item) => sum + item.count, 0),
+        verified: attendanceCounts.find(item => item._id === 'verified')?.count || 0,
+        pending: attendanceCounts.find(item => item._id === 'pending')?.count || 0,
+        flagged: attendanceCounts.find(item => item._id === 'flagged')?.count || 0
+      };
+      
+      // Add virtual fields
+      meeting.isUpcoming = meeting.status === 'scheduled' && new Date(meeting.schedule.startTime) > new Date();
+      meeting.isActiveNow = meeting.status === 'in_progress' || 
+        (meeting.status === 'active' && 
+         new Date(meeting.schedule.startTime) <= new Date() && 
+         new Date(meeting.schedule.endTime) >= new Date());
+    }
+    
+    res.json({
+      success: true,
+      meetings,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total,
+        pages: Math.ceil(total / parseInt(limit))
+      }
+    });
   } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch meetings' });
+    console.error('Get meetings error:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch meetings',
+      code: 'MEETINGS_FETCH_FAILED'
+    });
   }
 });
 
+/**
+ * @route GET /api/meetings/:meetingId
+ * @desc Get meeting details
+ * @access Private
+ */
 app.get('/api/meetings/:meetingId', authenticateToken, async (req, res) => {
   try {
     const meeting = await Meeting.findOne({
       _id: req.params.meetingId,
-      organizationId: req.user.organizationId._id
-    }).populate('createdBy', 'fullName email');
+      organizationId: req.user.organizationId._id,
+      deletedAt: null
+    })
+    .populate('createdBy', 'fullName email avatar')
+    .lean();
     
     if (!meeting) {
-      return res.status(404).json({ error: 'Meeting not found' });
+      return res.status(404).json({ 
+        error: 'Meeting not found',
+        code: 'MEETING_NOT_FOUND'
+      });
     }
     
-    // Generate QR code if needed
+    // Get attendance statistics
+    const attendanceStats = await AttendanceRecord.aggregate([
+      {
+        $match: { 
+          meetingId: meeting._id,
+          deletedAt: null
+        }
+      },
+      {
+        $facet: {
+          byStatus: [
+            {
+              $group: {
+                _id: '$status',
+                count: { $sum: 1 }
+              }
+            }
+          ],
+          byType: [
+            {
+              $group: {
+                _id: '$verificationType',
+                count: { $sum: 1 }
+              }
+            }
+          ],
+          recent: [
+            {
+              $sort: { createdAt: -1 }
+            },
+            {
+              $limit: 10
+            },
+            {
+              $project: {
+                'attendeeInfo.fullName': 1,
+                'attendeeInfo.phone': 1,
+                verificationType: 1,
+                status: 1,
+                createdAt: 1
+              }
+            }
+          ]
+        }
+      }
+    ]);
+    
+    // Generate QR code
     const qrCode = await generateMeetingQRCode(meeting.accessCodes.publicCode);
     
+    // Generate meeting links
+    const links = generateMeetingLinks(meeting._id, meeting.accessCodes.publicCode);
+    
     res.json({
-      ...meeting.toObject(),
-      qrCode
+      success: true,
+      meeting: {
+        ...meeting,
+        qrCode,
+        links,
+        statistics: {
+          attendanceByStatus: attendanceStats[0].byStatus.reduce((acc, item) => {
+            acc[item._id] = item.count;
+            return acc;
+          }, {}),
+          attendanceByType: attendanceStats[0].byType.reduce((acc, item) => {
+            acc[item._id] = item.count;
+            return acc;
+          }, {}),
+          recentAttendance: attendanceStats[0].recent,
+          totalAttendees: attendanceStats[0].byStatus.reduce((sum, item) => sum + item.count, 0)
+        }
+      }
     });
   } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch meeting' });
+    console.error('Get meeting error:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch meeting',
+      code: 'MEETING_FETCH_FAILED'
+    });
   }
 });
 
-app.put('/api/meetings/:meetingId', authenticateToken, async (req, res) => {
+/**
+ * @route PUT /api/meetings/:meetingId
+ * @desc Update meeting
+ * @access Private (canEditMeetings permission)
+ */
+app.put('/api/meetings/:meetingId', authenticateToken, checkPermission('canEditMeetings'), async (req, res) => {
   try {
-    const meeting = await Meeting.findOneAndUpdate(
-      {
-        _id: req.params.meetingId,
-        organizationId: req.user.organizationId._id
-      },
-      { ...req.body, updatedAt: new Date() },
-      { new: true }
-    );
-    
-    if (!meeting) {
-      return res.status(404).json({ error: 'Meeting not found' });
-    }
-    
-    await AuditLog.create({
-      organizationId: req.user.organizationId._id,
-      userId: req.user._id,
-      action: 'MEETING_UPDATED',
-      entityType: 'meeting',
-      entityId: meeting._id,
-      details: { updates: req.body },
-      ipAddress: req.ip,
-      userAgent: req.get('User-Agent')
-    });
-    
-    res.json(meeting);
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to update meeting' });
-  }
-});
-
-app.post('/api/meetings/:meetingId/start', authenticateToken, async (req, res) => {
-  try {
-    const meeting = await Meeting.findOneAndUpdate(
-      {
-        _id: req.params.meetingId,
-        organizationId: req.user.organizationId._id,
-        status: { $in: ['draft', 'active'] }
-      },
-      { status: 'in_progress', updatedAt: new Date() },
-      { new: true }
-    );
-    
-    if (!meeting) {
-      return res.status(404).json({ error: 'Meeting not found or cannot be started' });
-    }
-    
-    await AuditLog.create({
-      organizationId: req.user.organizationId._id,
-      userId: req.user._id,
-      action: 'MEETING_STARTED',
-      entityType: 'meeting',
-      entityId: meeting._id,
-      details: {},
-      ipAddress: req.ip,
-      userAgent: req.get('User-Agent')
-    });
-    
-    res.json(meeting);
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to start meeting' });
-  }
-});
-
-app.post('/api/meetings/:meetingId/end', authenticateToken, async (req, res) => {
-  try {
-    const meeting = await Meeting.findOneAndUpdate(
-      {
-        _id: req.params.meetingId,
-        organizationId: req.user.organizationId._id,
-        status: 'in_progress'
-      },
-      { status: 'completed', updatedAt: new Date() },
-      { new: true }
-    );
-    
-    if (!meeting) {
-      return res.status(404).json({ error: 'Meeting not found or cannot be ended' });
-    }
-    
-    await AuditLog.create({
-      organizationId: req.user.organizationId._id,
-      userId: req.user._id,
-      action: 'MEETING_ENDED',
-      entityType: 'meeting',
-      entityId: meeting._id,
-      details: {},
-      ipAddress: req.ip,
-      userAgent: req.get('User-Agent')
-    });
-    
-    res.json(meeting);
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to end meeting' });
-  }
-});
-
-// 4. Attendance Routes
-
-// Smartphone GPS Attendance
-// Enhanced smartphone attendance with time verification
-// Replace the existing /api/attend/smartphone endpoint (around line 650) with this enhanced version:
-
-// Enhanced smartphone attendance with strict location verification
-app.post('/api/attend/smartphone', async (req, res) => {
-  try {
-    const { meetingCode, attendeeInfo, locationData, deviceInfo, formData } = req.body;
-    
-    // Validate required location data
-    if (!locationData || !locationData.latitude || !locationData.longitude) {
-      return res.status(400).json({ 
-        error: 'Location data is required',
-        details: 'Please enable GPS/location services on your device'
-      });
-    }
-    
-    if (!locationData.accuracy) {
-      return res.status(400).json({ 
-        error: 'Location accuracy is required',
-        details: 'Cannot verify location without accuracy information'
-      });
-    }
-    
-    // Find meeting
     const meeting = await Meeting.findOne({
-      'accessCodes.publicCode': meetingCode,
-      status: { $in: ['active', 'in_progress'] }
+      _id: req.params.meetingId,
+      organizationId: req.user.organizationId._id,
+      deletedAt: null
     });
     
     if (!meeting) {
       return res.status(404).json({ 
-        error: 'Meeting not found or not active',
-        suggestions: [
-          'Check the meeting code',
-          'Ensure the meeting has started',
-          'Contact the meeting organizer'
-        ]
+        error: 'Meeting not found',
+        code: 'MEETING_NOT_FOUND'
       });
     }
     
-    // Check if GPS attendance is allowed
-    if (!meeting.attendanceConfig.allowedModes.smartphoneGPS) {
-      return res.status(403).json({ 
-        error: 'GPS attendance not allowed',
-        details: 'This meeting does not allow smartphone GPS attendance'
+    // Check if meeting can be edited
+    if (meeting.status === 'completed' || meeting.status === 'cancelled') {
+      return res.status(400).json({ 
+        error: 'Cannot edit completed or cancelled meetings',
+        code: 'MEETING_NOT_EDITABLE'
+      });
+    }
+    
+    const oldMeeting = { ...meeting.toObject() };
+    
+    // Update fields
+    const updates = req.body;
+    Object.keys(updates).forEach(key => {
+      if (key !== '_id' && key !== 'organizationId' && key !== 'createdBy' && key !== 'accessCodes') {
+        if (typeof updates[key] === 'object' && updates[key] !== null && !Array.isArray(updates[key])) {
+          meeting[key] = { ...meeting[key], ...updates[key] };
+        } else {
+          meeting[key] = updates[key];
+        }
+      }
+    });
+    
+    meeting.updatedAt = new Date();
+    await meeting.save();
+    
+    // Create audit log
+    const changes = {};
+    Object.keys(updates).forEach(key => {
+      if (oldMeeting[key] !== meeting[key]) {
+        changes[key] = {
+          old: oldMeeting[key],
+          new: meeting[key]
+        };
+      }
+    });
+    
+    await AuditLog.create({
+      organizationId: req.user.organizationId._id,
+      userId: req.user._id,
+      userEmail: req.user.email,
+      userRole: req.user.role,
+      action: 'MEETING_UPDATED',
+      entityType: 'meeting',
+      entityId: meeting._id,
+      entityName: meeting.title,
+      details: changes,
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+      severity: 'info'
+    });
+    
+    res.json({
+      success: true,
+      meeting,
+      changes
+    });
+  } catch (error) {
+    console.error('Update meeting error:', error);
+    
+    if (error.name === 'ValidationError') {
+      const errors = Object.values(error.errors).map(err => err.message);
+      return res.status(400).json({ 
+        error: 'Validation failed',
+        details: errors,
+        code: 'VALIDATION_ERROR'
+      });
+    }
+    
+    res.status(500).json({ 
+      error: 'Failed to update meeting',
+      code: 'MEETING_UPDATE_FAILED'
+    });
+  }
+});
+
+/**
+ * @route DELETE /api/meetings/:meetingId
+ * @desc Delete meeting
+ * @access Private (canDeleteMeetings permission)
+ */
+app.delete('/api/meetings/:meetingId', authenticateToken, checkPermission('canDeleteMeetings'), async (req, res) => {
+  try {
+    const { hardDelete, deleteAttendance } = req.query;
+    
+    const meeting = await Meeting.findOne({
+      _id: req.params.meetingId,
+      organizationId: req.user.organizationId._id,
+      deletedAt: null
+    });
+    
+    if (!meeting) {
+      return res.status(404).json({ 
+        error: 'Meeting not found',
+        code: 'MEETING_NOT_FOUND'
+      });
+    }
+    
+    // Check if meeting has attendance records
+    const attendanceCount = await AttendanceRecord.countDocuments({
+      meetingId: meeting._id,
+      deletedAt: null
+    });
+    
+    if (attendanceCount > 0 && hardDelete !== 'true') {
+      return res.status(400).json({
+        error: 'Meeting has attendance records. Use hardDelete=true to delete anyway.',
+        attendanceCount,
+        code: 'MEETING_HAS_ATTENDANCE'
+      });
+    }
+    
+    if (hardDelete === 'true') {
+      // Hard delete - permanently remove
+      await Meeting.deleteOne({ _id: meeting._id });
+      
+      if (deleteAttendance === 'true') {
+        await AttendanceRecord.deleteMany({ meetingId: meeting._id });
+      } else {
+        // Soft delete related records
+        await AttendanceRecord.updateMany(
+          { meetingId: meeting._id },
+          { deletedAt: new Date() }
+        );
+      }
+    } else {
+      // Soft delete - mark as deleted
+      meeting.deletedAt = new Date();
+      meeting.status = 'cancelled';
+      await meeting.save();
+    }
+    
+    // Create audit log
+    await AuditLog.create({
+      organizationId: req.user.organizationId._id,
+      userId: req.user._id,
+      userEmail: req.user.email,
+      userRole: req.user.role,
+      action: hardDelete === 'true' ? 'MEETING_DELETED_PERMANENTLY' : 'MEETING_DELETED',
+      entityType: 'meeting',
+      entityId: meeting._id,
+      entityName: meeting.title,
+      details: {
+        title: meeting.title,
+        hardDelete: hardDelete === 'true',
+        deleteAttendance: deleteAttendance === 'true',
+        attendanceCount
+      },
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+      severity: 'warning'
+    });
+    
+    res.json({
+      success: true,
+      message: hardDelete === 'true' ? 'Meeting permanently deleted' : 'Meeting deleted',
+      meetingId: meeting._id,
+      hardDelete: hardDelete === 'true'
+    });
+    
+  } catch (error) {
+    console.error('Delete meeting error:', error);
+    res.status(500).json({ 
+      error: 'Failed to delete meeting',
+      code: 'MEETING_DELETE_FAILED'
+    });
+  }
+});
+
+/**
+ * @route POST /api/meetings/:meetingId/start
+ * @desc Start a meeting
+ * @access Private (canEditMeetings permission)
+ */
+app.post('/api/meetings/:meetingId/start', authenticateToken, checkPermission('canEditMeetings'), async (req, res) => {
+  try {
+    const meeting = await Meeting.findOne({
+      _id: req.params.meetingId,
+      organizationId: req.user.organizationId._id,
+      deletedAt: null,
+      status: { $in: ['draft', 'scheduled', 'active'] }
+    });
+    
+    if (!meeting) {
+      return res.status(404).json({ 
+        error: 'Meeting not found or cannot be started',
+        code: 'MEETING_NOT_STARTABLE'
+      });
+    }
+    
+    // Check if meeting is in the future
+    if (new Date(meeting.schedule.startTime) > new Date()) {
+      return res.status(400).json({ 
+        error: 'Meeting start time is in the future',
+        code: 'MEETING_NOT_STARTED_YET'
+      });
+    }
+    
+    const oldStatus = meeting.status;
+    meeting.status = 'in_progress';
+    meeting.updatedAt = new Date();
+    await meeting.save();
+    
+    // Create audit log
+    await AuditLog.create({
+      organizationId: req.user.organizationId._id,
+      userId: req.user._id,
+      userEmail: req.user.email,
+      userRole: req.user.role,
+      action: 'MEETING_STARTED',
+      entityType: 'meeting',
+      entityId: meeting._id,
+      entityName: meeting.title,
+      details: {
+        oldStatus,
+        newStatus: meeting.status,
+        startedBy: req.user.fullName
+      },
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+      severity: 'info'
+    });
+    
+    // Send notifications
+    const admins = await AdminUser.find({
+      organizationId: req.user.organizationId._id,
+      isActive: true,
+      'permissions.canViewReports': true
+    });
+    
+    for (const admin of admins) {
+      await sendNotification(
+        admin._id,
+        'Meeting Started',
+        `Meeting "${meeting.title}" has been started by ${req.user.fullName}`,
+        {
+          meetingId: meeting._id,
+          meetingTitle: meeting.title,
+          startedBy: req.user.fullName,
+          startTime: meeting.schedule.startTime,
+          organizationId: req.user.organizationId._id
+        },
+        'meeting'
+      );
+    }
+    
+    res.json({
+      success: true,
+      meeting: {
+        id: meeting._id,
+        title: meeting.title,
+        status: meeting.status,
+        oldStatus
+      }
+    });
+  } catch (error) {
+    console.error('Start meeting error:', error);
+    res.status(500).json({ 
+      error: 'Failed to start meeting',
+      code: 'MEETING_START_FAILED'
+    });
+  }
+});
+
+/**
+ * @route POST /api/meetings/:meetingId/end
+ * @desc End a meeting
+ * @access Private (canEditMeetings permission)
+ */
+app.post('/api/meetings/:meetingId/end', authenticateToken, checkPermission('canEditMeetings'), async (req, res) => {
+  try {
+    const meeting = await Meeting.findOne({
+      _id: req.params.meetingId,
+      organizationId: req.user.organizationId._id,
+      deletedAt: null,
+      status: 'in_progress'
+    });
+    
+    if (!meeting) {
+      return res.status(404).json({ 
+        error: 'Meeting not found or not in progress',
+        code: 'MEETING_NOT_IN_PROGRESS'
+      });
+    }
+    
+    const oldStatus = meeting.status;
+    meeting.status = 'completed';
+    meeting.updatedAt = new Date();
+    await meeting.save();
+    
+    // Create audit log
+    await AuditLog.create({
+      organizationId: req.user.organizationId._id,
+      userId: req.user._id,
+      userEmail: req.user.email,
+      userRole: req.user.role,
+      action: 'MEETING_ENDED',
+      entityType: 'meeting',
+      entityId: meeting._id,
+      entityName: meeting.title,
+      details: {
+        oldStatus,
+        newStatus: meeting.status,
+        endedBy: req.user.fullName,
+        duration: meeting.duration
+      },
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+      severity: 'info'
+    });
+    
+    // Send notifications
+    const admins = await AdminUser.find({
+      organizationId: req.user.organizationId._id,
+      isActive: true,
+      'permissions.canViewReports': true
+    });
+    
+    for (const admin of admins) {
+      await sendNotification(
+        admin._id,
+        'Meeting Ended',
+        `Meeting "${meeting.title}" has been ended by ${req.user.fullName}. Total duration: ${meeting.duration.toFixed(1)} hours`,
+        {
+          meetingId: meeting._id,
+          meetingTitle: meeting.title,
+          endedBy: req.user.fullName,
+          endTime: meeting.schedule.endTime,
+          duration: meeting.duration,
+          organizationId: req.user.organizationId._id
+        },
+        'meeting'
+      );
+    }
+    
+    res.json({
+      success: true,
+      meeting: {
+        id: meeting._id,
+        title: meeting.title,
+        status: meeting.status,
+        oldStatus,
+        duration: meeting.duration
+      }
+    });
+  } catch (error) {
+    console.error('End meeting error:', error);
+    res.status(500).json({ 
+      error: 'Failed to end meeting',
+      code: 'MEETING_END_FAILED'
+    });
+  }
+});
+
+/**
+ * @route GET /api/meetings/:publicCode/form
+ * @desc Get meeting form for attendees
+ * @access Public (with meeting code)
+ */
+app.get('/api/meetings/:publicCode/form', async (req, res) => {
+  try {
+    const meeting = await Meeting.findOne({
+      'accessCodes.publicCode': req.params.publicCode,
+      deletedAt: null,
+      status: { $in: ['active', 'in_progress'] }
+    }).populate('organizationId', 'name logo');
+    
+    if (!meeting) {
+      return res.status(404).json({ 
+        error: 'Meeting not found or not active',
+        code: 'MEETING_NOT_FOUND'
       });
     }
     
@@ -2100,7 +3716,8 @@ app.post('/api/attend/smartphone', async (req, res) => {
       return res.status(403).json({ 
         error: 'Attendance not yet started',
         details: `Attendance starts at ${moment(meeting.schedule.attendanceStart).format('h:mm A')}`,
-        availableFrom: meeting.schedule.attendanceStart
+        availableFrom: meeting.schedule.attendanceStart,
+        code: 'ATTENDANCE_NOT_STARTED'
       });
     }
     
@@ -2108,87 +3725,220 @@ app.post('/api/attend/smartphone', async (req, res) => {
       return res.status(403).json({ 
         error: 'Attendance period has ended',
         details: `Attendance ended at ${moment(meeting.schedule.attendanceEnd).format('h:mm A')}`,
-        endedAt: meeting.schedule.attendanceEnd
+        endedAt: meeting.schedule.attendanceEnd,
+        code: 'ATTENDANCE_ENDED'
       });
     }
     
-    // STRICT LOCATION VALIDATION
+    // Check if meeting is private and requires approval
+    if (meeting.isPrivate) {
+      return res.status(403).json({
+        error: 'This is a private meeting',
+        code: 'PRIVATE_MEETING'
+      });
+    }
+    
+    // Check max attendees
+    if (meeting.maxAttendees) {
+      const currentAttendance = await AttendanceRecord.countDocuments({
+        meetingId: meeting._id,
+        deletedAt: null,
+        status: { $in: ['pending', 'verified'] }
+      });
+      
+      if (currentAttendance >= meeting.maxAttendees) {
+        return res.status(403).json({
+          error: 'Meeting is full',
+          details: `Maximum ${meeting.maxAttendees} attendees allowed`,
+          current: currentAttendance,
+          max: meeting.maxAttendees,
+          code: 'MEETING_FULL'
+        });
+      }
+    }
+    
+    // Prepare form data
+    const formData = {
+      meeting: {
+        id: meeting._id,
+        title: meeting.title,
+        description: meeting.description,
+        category: meeting.category,
+        organization: {
+          id: meeting.organizationId._id,
+          name: meeting.organizationId.name,
+          logo: meeting.organizationId.logo
+        },
+        location: meeting.location,
+        schedule: meeting.schedule,
+        requiresApproval: meeting.requiresApproval
+      },
+      attendanceConfig: {
+        allowedModes: meeting.attendanceConfig.allowedModes,
+        requiredFields: meeting.attendanceConfig.requiredFields,
+        verificationStrictness: meeting.attendanceConfig.verificationStrictness,
+        autoApprove: meeting.attendanceConfig.autoApprove
+      },
+      customFormFields: meeting.customFormFields,
+      timeVerification: meeting.timeVerification,
+      maxAttendees: meeting.maxAttendees,
+      currentAttendance: meeting.attendanceCount
+    };
+    
+    res.json({
+      success: true,
+      ...formData
+    });
+  } catch (error) {
+    console.error('Get meeting form error:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch meeting form',
+      code: 'FORM_FETCH_FAILED'
+    });
+  }
+});
+
+/**
+ * @route GET /api/meetings/:meetingId/qrcode
+ * @desc Get meeting QR code
+ * @access Private
+ */
+app.get('/api/meetings/:meetingId/qrcode', authenticateToken, async (req, res) => {
+  try {
+    const meeting = await Meeting.findOne({
+      _id: req.params.meetingId,
+      organizationId: req.user.organizationId._id,
+      deletedAt: null
+    });
+    
+    if (!meeting) {
+      return res.status(404).json({ 
+        error: 'Meeting not found',
+        code: 'MEETING_NOT_FOUND'
+      });
+    }
+    
+    const qrCode = await generateMeetingQRCode(meeting.accessCodes.publicCode);
+    
+    if (!qrCode) {
+      return res.status(500).json({ 
+        error: 'Failed to generate QR code',
+        code: 'QR_CODE_GENERATION_FAILED'
+      });
+    }
+    
+    res.json({
+      success: true,
+      qrCode,
+      meeting: {
+        id: meeting._id,
+        title: meeting.title,
+        publicCode: meeting.accessCodes.publicCode,
+        url: `${process.env.FRONTEND_URL || 'https://gsf-inky.vercel.app'}/attend/${meeting.accessCodes.publicCode}`
+      }
+    });
+  } catch (error) {
+    console.error('Get QR code error:', error);
+    res.status(500).json({ 
+      error: 'Failed to generate QR code',
+      code: 'QR_CODE_FETCH_FAILED'
+    });
+  }
+});
+
+// ================= ATTENDANCE ROUTES =================
+
+/**
+ * @route POST /api/attend/smartphone
+ * @desc Record smartphone GPS attendance
+ * @access Public (with meeting code)
+ */
+app.post('/api/attend/smartphone', async (req, res) => {
+  try {
+    const { meetingCode, attendeeInfo, locationData, deviceInfo, formData } = req.body;
+    
+    // Validation
+    if (!meetingCode || !attendeeInfo || !attendeeInfo.fullName) {
+      return res.status(400).json({ 
+        error: 'Missing required fields',
+        required: ['meetingCode', 'attendeeInfo.fullName'],
+        code: 'MISSING_REQUIRED_FIELDS'
+      });
+    }
+    
+    if (!locationData || !locationData.latitude || !locationData.longitude) {
+      return res.status(400).json({ 
+        error: 'Location data is required for GPS attendance',
+        code: 'LOCATION_DATA_REQUIRED'
+      });
+    }
+    
+    // Find meeting
+    const meeting = await Meeting.findOne({
+      'accessCodes.publicCode': meetingCode,
+      deletedAt: null,
+      status: { $in: ['active', 'in_progress'] }
+    });
+    
+    if (!meeting) {
+      return res.status(404).json({ 
+        error: 'Meeting not found or not active',
+        code: 'MEETING_NOT_FOUND'
+      });
+    }
+    
+    // Check if GPS attendance is allowed
+    if (!meeting.attendanceConfig.allowedModes.smartphoneGPS) {
+      return res.status(403).json({ 
+        error: 'GPS attendance not allowed for this meeting',
+        code: 'GPS_ATTENDANCE_NOT_ALLOWED'
+      });
+    }
+    
+    // Check time window
+    const now = new Date();
+    if (now < meeting.schedule.attendanceStart) {
+      return res.status(403).json({ 
+        error: 'Attendance not yet started',
+        details: `Attendance starts at ${moment(meeting.schedule.attendanceStart).format('h:mm A')}`,
+        code: 'ATTENDANCE_NOT_STARTED'
+      });
+    }
+    
+    if (now > meeting.schedule.attendanceEnd) {
+      return res.status(403).json({ 
+        error: 'Attendance period has ended',
+        details: `Attendance ended at ${moment(meeting.schedule.attendanceEnd).format('h:mm A')}`,
+        code: 'ATTENDANCE_ENDED'
+      });
+    }
+    
+    // Check max attendees
+    if (meeting.maxAttendees) {
+      const currentAttendance = await AttendanceRecord.countDocuments({
+        meetingId: meeting._id,
+        deletedAt: null,
+        status: { $in: ['pending', 'verified'] }
+      });
+      
+      if (currentAttendance >= meeting.maxAttendees) {
+        return res.status(403).json({
+          error: 'Meeting is full',
+          details: `Maximum ${meeting.maxAttendees} attendees allowed`,
+          code: 'MEETING_FULL'
+        });
+      }
+    }
+    
+    // Validate location
     const locationValidation = validateLocation(
       locationData.latitude,
       locationData.longitude,
       meeting.location.latitude,
       meeting.location.longitude,
       meeting.location.radius,
-      locationData.accuracy
+      locationData.accuracy || 100
     );
-    
-    // Check for previous locations from this device
-    const previousAttendance = await AttendanceRecord.findOne({
-      'deviceInfo.deviceId': deviceInfo?.deviceId,
-      'meetingId': meeting._id
-    }).sort({ createdAt: -1 });
-    
-    // Detect location spoofing
-    const spoofingDetection = detectLocationSpoofing(
-      locationData,
-      previousAttendance ? [previousAttendance.locationData.coordinates] : []
-    );
-    
-    // Apply strictness level from meeting config
-    let locationAccepted = false;
-    let rejectionReason = '';
-    
-    switch(meeting.attendanceConfig.verificationStrictness) {
-      case 'low':
-        locationAccepted = locationValidation.checks.accuracyAdjustedCheck;
-        break;
-      case 'medium':
-        locationAccepted = locationValidation.checks.basicRadiusCheck;
-        if (spoofingDetection.riskLevel === 'high') {
-          locationAccepted = false;
-          rejectionReason = 'Suspicious location detected';
-        }
-        break;
-      case 'high':
-        locationAccepted = locationValidation.checks.strictCheck && 
-                          !spoofingDetection.isSuspicious &&
-                          locationValidation.checks.validCoordinates &&
-                          locationData.accuracy < 50; // Require good accuracy
-        if (!locationAccepted) {
-          rejectionReason = 'Strict location verification failed';
-        }
-        break;
-      default:
-        locationAccepted = locationValidation.checks.basicRadiusCheck;
-    }
-    
-    if (!locationAccepted) {
-      return res.status(403).json({ 
-        error: 'Location verification failed',
-        details: rejectionReason || 'Your location does not match the meeting venue',
-        validation: {
-          ...locationValidation,
-          spoofingDetection,
-          meetingLocation: {
-            latitude: meeting.location.latitude,
-            longitude: meeting.location.longitude,
-            radius: meeting.location.radius,
-            address: meeting.location.address
-          },
-          yourLocation: {
-            latitude: locationData.latitude,
-            longitude: locationData.longitude,
-            accuracy: locationData.accuracy
-          }
-        },
-        suggestions: [
-          'Enable high-accuracy GPS mode',
-          'Move closer to the meeting venue',
-          'Ensure location services are enabled',
-          'Try again in a different location'
-        ]
-      });
-    }
     
     // Check for duplicates
     const duplicateChecks = [];
@@ -2196,7 +3946,8 @@ app.post('/api/attend/smartphone', async (req, res) => {
     if (meeting.attendanceConfig.duplicatePrevention.preventSameDevice && deviceInfo?.deviceId) {
       duplicateChecks.push({
         'deviceInfo.deviceId': deviceInfo.deviceId,
-        'meetingId': meeting._id,
+        meetingId: meeting._id,
+        deletedAt: null,
         createdAt: {
           $gte: new Date(now.getTime() - meeting.attendanceConfig.duplicatePrevention.timeWindowMinutes * 60000)
         }
@@ -2206,7 +3957,8 @@ app.post('/api/attend/smartphone', async (req, res) => {
     if (meeting.attendanceConfig.duplicatePrevention.preventSamePhone && attendeeInfo.phone) {
       duplicateChecks.push({
         'attendeeInfo.phone': attendeeInfo.phone,
-        'meetingId': meeting._id,
+        meetingId: meeting._id,
+        deletedAt: null,
         createdAt: {
           $gte: new Date(now.getTime() - meeting.attendanceConfig.duplicatePrevention.timeWindowMinutes * 60000)
         }
@@ -2216,7 +3968,8 @@ app.post('/api/attend/smartphone', async (req, res) => {
     if (meeting.attendanceConfig.duplicatePrevention.preventSameNameTime && attendeeInfo.fullName) {
       duplicateChecks.push({
         'attendeeInfo.fullName': attendeeInfo.fullName,
-        'meetingId': meeting._id,
+        meetingId: meeting._id,
+        deletedAt: null,
         createdAt: {
           $gte: new Date(now.getTime() - meeting.attendanceConfig.duplicatePrevention.timeWindowMinutes * 60000)
         }
@@ -2235,38 +3988,36 @@ app.post('/api/attend/smartphone', async (req, res) => {
           existingRecord: {
             id: duplicate._id,
             checkInTime: duplicate.timeTracking.checkInTime,
-            status: duplicate.status,
-            name: duplicate.attendeeInfo.fullName
+            status: duplicate.status
           },
-          timeWindow: `${meeting.attendanceConfig.duplicatePrevention.timeWindowMinutes} minutes`,
-          message: 'You have already marked attendance for this meeting'
+          code: 'DUPLICATE_ATTENDANCE'
         });
       }
     }
     
-    // Validate custom form data if present
+    // Validate custom form fields
     const additionalFields = new Map();
     if (formData && meeting.customFormFields) {
       for (const field of meeting.customFormFields) {
-        if (field.isRequired && (!formData[field.fieldName] || formData[field.fieldName].trim() === '')) {
+        if (field.isRequired && (!formData[field.fieldName] || formData[field.fieldName].toString().trim() === '')) {
           return res.status(400).json({ 
             error: 'Required information missing',
             details: `Please provide: ${field.label}`,
             field: field.fieldName,
-            label: field.label
+            code: 'REQUIRED_FIELD_MISSING'
           });
         }
         
         if (formData[field.fieldName]) {
-          // Apply validation if specified
+          const value = formData[field.fieldName].toString().trim();
+          
+          // Apply validation
           if (field.validation) {
-            const value = formData[field.fieldName].toString();
-            
             if (field.validation.minLength && value.length < field.validation.minLength) {
               return res.status(400).json({
                 error: 'Invalid input',
                 details: `${field.label} must be at least ${field.validation.minLength} characters`,
-                field: field.fieldName
+                code: 'FIELD_VALIDATION_FAILED'
               });
             }
             
@@ -2274,7 +4025,7 @@ app.post('/api/attend/smartphone', async (req, res) => {
               return res.status(400).json({
                 error: 'Invalid input',
                 details: `${field.label} must not exceed ${field.validation.maxLength} characters`,
-                field: field.fieldName
+                code: 'FIELD_VALIDATION_FAILED'
               });
             }
             
@@ -2284,1356 +4035,383 @@ app.post('/api/attend/smartphone', async (req, res) => {
                 return res.status(400).json({
                   error: 'Invalid format',
                   details: `${field.label} format is invalid`,
-                  field: field.fieldName
+                  code: 'FIELD_VALIDATION_FAILED'
                 });
               }
             }
           }
           
-          additionalFields.set(field.fieldName, formData[field.fieldName]);
+          additionalFields.set(field.fieldName, value);
         }
       }
     }
     
-    // Calculate enhanced confidence score
-    const baseConfidenceScore = calculateConfidenceScore('smartphone_gps', locationData, meeting);
-    const locationConfidence = locationValidation.confidenceScore;
+    // Calculate confidence score
+    const confidenceScore = calculateConfidenceScore('smartphone_gps', locationValidation, meeting);
     
-    // Adjust confidence based on multiple factors
-    let finalConfidenceScore = (baseConfidenceScore * 0.6) + (locationConfidence * 0.4);
-    
-    // Penalize for spoofing warnings
-    if (spoofingDetection.warnings.length > 0) {
-      finalConfidenceScore -= spoofingDetection.warnings.length * 5;
-    }
-    
-    // Ensure score is within bounds
-    finalConfidenceScore = Math.max(0, Math.min(100, finalConfidenceScore));
-    
-    // Determine status based on confidence and verification strictness
+    // Determine status
     let status = 'pending';
-    const verificationThresholds = {
-      low: 50,
-      medium: 70,
-      high: 85
-    };
-    
-    const threshold = verificationThresholds[meeting.attendanceConfig.verificationStrictness] || 70;
-    
-    if (finalConfidenceScore >= threshold && !spoofingDetection.isSuspicious) {
+    if (meeting.attendanceConfig.autoApprove.enabled && confidenceScore >= meeting.attendanceConfig.autoApprove.confidenceThreshold) {
       status = 'verified';
-    } else if (spoofingDetection.riskLevel === 'high') {
-      status = 'flagged';
     }
     
-    // Create enhanced attendance record
+    // Create attendance record
     const attendanceRecord = await AttendanceRecord.create({
       meetingId: meeting._id,
       organizationId: meeting.organizationId,
       verificationType: 'smartphone_gps',
       attendeeInfo: {
         ...attendeeInfo,
-        additionalFields: additionalFields
+        additionalFields
       },
       locationData: {
         coordinates: locationData,
         distanceFromVenue: locationValidation.distance,
         isWithinRadius: locationValidation.isWithinRadius,
         address: locationData.address || meeting.location.address,
-        validationDetails: {
-          ...locationValidation,
-          spoofingDetection,
-          strictnessLevel: meeting.attendanceConfig.verificationStrictness
-        }
+        validationDetails: locationValidation
       },
-      deviceInfo: {
-        ...deviceInfo,
-        locationCapabilities: {
-          hasGPS: true,
-          accuracy: locationData.accuracy,
-          altitude: locationData.altitude,
-          heading: locationData.heading,
-          speed: locationData.speed
-        }
-      },
+      deviceInfo: deviceInfo || {},
       verificationDetails: {
-        confidenceScore: finalConfidenceScore,
+        confidenceScore,
         verificationMethod: 'GPS',
         verificationTimestamp: now,
-        locationVerificationScore: locationConfidence,
-        spoofingRisk: spoofingDetection.riskLevel,
-        requiresTimeVerification: meeting.timeVerification?.requireMinimumStay || false,
-        minimumStayRequired: meeting.timeVerification?.minimumStayMinutes || 0
+        autoVerified: status === 'verified',
+        autoVerifiedAt: status === 'verified' ? now : null
       },
       timeTracking: {
         checkInTime: now,
-        meetsTimeRequirement: false,
-        monitoringEnabled: meeting.timeVerification?.enableContinuousMonitoring || false,
-        lastLocationCheck: now,
-        locationHistory: [{
-          timestamp: now,
-          latitude: locationData.latitude,
-          longitude: locationData.longitude,
-          accuracy: locationData.accuracy,
-          validated: true,
-          validationScore: locationConfidence
-        }]
+        meetsTimeRequirement: false
       },
       status,
       auditTrail: [{
         action: 'ATTENDANCE_RECORDED',
         performedBy: null,
-        notes: `GPS attendance recorded with ${finalConfidenceScore.toFixed(1)}% confidence`
+        notes: `GPS attendance recorded with ${confidenceScore}% confidence`
       }]
     });
     
-    // Update device fingerprint with enhanced data
-    if (deviceInfo?.deviceId) {
-      await DeviceFingerprint.findOneAndUpdate(
-        { deviceId: deviceInfo.deviceId, organizationId: meeting.organizationId },
-        {
-          $set: {
-            lastUsed: now,
-            lastLocation: {
-              latitude: locationData.latitude,
-              longitude: locationData.longitude,
-              accuracy: locationData.accuracy,
-              timestamp: now
-            },
-            metadata: {
-              userAgent: deviceInfo.userAgent,
-              platform: deviceInfo.platform,
-              os: deviceInfo.os,
-              browser: deviceInfo.browser,
-              screenResolution: deviceInfo.screenResolution,
-              hasGPS: true,
-              locationAccuracy: locationData.accuracy
-            },
-            locationHistory: {
-              $push: {
-                timestamp: now,
-                latitude: locationData.latitude,
-                longitude: locationData.longitude,
-                meetingId: meeting._id
-              }
-            }
-          }
-        },
-        { upsert: true, new: true }
-      );
-    }
+    // Update meeting counts
+    await Meeting.findByIdAndUpdate(meeting._id, {
+      $inc: { 
+        attendanceCount: 1,
+        ...(status === 'verified' ? { verifiedCount: 1 } : { pendingCount: 1 })
+      }
+    });
     
-    // Schedule monitoring if enabled
-    if (meeting.timeVerification?.enableContinuousMonitoring) {
-      setTimeout(() => {
-        monitorAttendanceDuration(attendanceRecord._id, meeting._id);
-      }, (meeting.timeVerification.monitoringInterval || 5) * 60000);
-    }
-    
-    // Generate enhanced response
-    const response = {
-      success: true,
-      attendanceId: attendanceRecord._id,
-      status: attendanceRecord.status,
-      confidenceScore: finalConfidenceScore,
-      locationVerification: {
-        passed: true,
-        distance: locationValidation.distance.toFixed(2),
-        radius: meeting.location.radius,
-        accuracy: locationData.accuracy,
-        confidence: locationConfidence,
-        warnings: [...locationValidation.messages, ...spoofingDetection.warnings]
-      },
-      timeVerification: meeting.timeVerification?.requireMinimumStay ? {
-        required: true,
-        minimumMinutes: meeting.timeVerification.minimumStayMinutes,
-        monitoringEnabled: meeting.timeVerification.enableContinuousMonitoring,
-        autoVerify: meeting.timeVerification.autoVerifyAfterStay,
-        autoVerifyAfterMinutes: meeting.timeVerification.autoVerifyMinutes
-      } : { required: false },
-      meetingDetails: {
-        title: meeting.title,
-        location: meeting.location.name,
-        time: moment(meeting.schedule.startTime).format('h:mm A'),
-        organizer: meeting.organizationId.name
-      },
-      nextSteps: status === 'verified' ? 
-        ['You can now participate in the meeting'] :
-        ['Your attendance is pending verification', 'An organizer will review your submission'],
-      timestamp: now.toISOString()
-    };
-    
-    // Add PWA response if enabled
-    if (meeting.pwaSettings?.enablePWA !== false) {
-      response.pwa = {
-        manifestUrl: `${process.env.FRONTEND_URL || 'https://gsf-inky.vercel.app'}/api/meetings/${meeting._id}/manifest.json`,
-        installable: true,
-        features: ['offline', 'push-notifications', 'background-sync', 'location-tracking']
-      };
-    }
-    
-    res.status(201).json(response);
-    
-    // Log successful attendance
+    // Create audit log
     await AuditLog.create({
       organizationId: meeting.organizationId,
       userId: null,
-      action: 'GPS_ATTENDANCE_RECORDED',
+      userEmail: 'attendee',
+      userRole: 'attendee',
+      action: 'ATTENDANCE_RECORDED',
       entityType: 'attendance',
       entityId: attendanceRecord._id,
+      entityName: attendeeInfo.fullName,
       details: {
-        attendeeName: attendeeInfo.fullName,
-        confidenceScore: finalConfidenceScore,
-        locationVerified: true,
-        distance: locationValidation.distance,
-        status
-      },
-      ipAddress: req.ip,
-      userAgent: req.get('User-Agent')
-    });
-    
-  } catch (error) {
-    console.error('Smartphone attendance error:', error);
-    
-    // Provide user-friendly error messages
-    let errorMessage = 'Failed to record attendance';
-    let errorDetails = 'An unexpected error occurred';
-    
-    if (error.name === 'ValidationError') {
-      errorMessage = 'Validation error';
-      errorDetails = Object.values(error.errors).map(err => err.message).join(', ');
-    } else if (error.code === 11000) {
-      errorMessage = 'Duplicate record';
-      errorDetails = 'This attendance appears to already exist';
-    }
-    
-    res.status(500).json({
-      error: errorMessage,
-      details: errorDetails,
-      timestamp: new Date().toISOString(),
-      support: 'If this persists, please contact the meeting organizer'
-    });
-  }
-});
-
-// SMS Attendance
-app.post('/api/webhooks/sms', async (req, res) => {
-  try {
-    const { From, To, Body } = req.body;
-    
-    // Parse SMS message
-    const message = Body.trim();
-    const parts = message.split(' ');
-    
-    if (parts.length < 3 || parts[0].toUpperCase() !== 'ATTEND') {
-      return res.status(400).json({ error: 'Invalid SMS format. Use: ATTEND <MEETING_CODE> <FULL_NAME> [ID]' });
-    }
-    
-    const meetingCode = parts[1];
-    const fullName = parts.slice(2).join(' ');
-    
-    // Find meeting
-    const meeting = await Meeting.findOne({
-      'accessCodes.smsCode': meetingCode,
-      status: { $in: ['active', 'in_progress'] }
-    });
-    
-    if (!meeting) {
-      return res.status(404).json({ error: 'Meeting not found or not active' });
-    }
-    
-    // Check if SMS attendance is allowed
-    if (!meeting.attendanceConfig.allowedModes.sms) {
-      return res.status(403).json({ error: 'SMS attendance not allowed for this meeting' });
-    }
-    
-    // Check time window
-    const now = new Date();
-    if (now < meeting.schedule.attendanceStart || now > meeting.schedule.attendanceEnd) {
-      return res.status(403).json({ error: 'Attendance outside allowed time window' });
-    }
-    
-    // Check for duplicates
-    const duplicate = await AttendanceRecord.findOne({
-      meetingId: meeting._id,
-      'attendeeInfo.phone': From,
-      status: { $in: ['pending', 'verified'] },
-      createdAt: {
-        $gte: new Date(now.getTime() - meeting.attendanceConfig.duplicatePrevention.timeWindowMinutes * 60000)
-      }
-    });
-    
-    if (duplicate) {
-      return res.status(409).json({ error: 'Duplicate attendance detected' });
-    }
-    
-    // Get admin location for this time window
-    const adminAttendance = await AttendanceRecord.findOne({
-      meetingId: meeting._id,
-      verificationType: 'manual',
-      'verificationDetails.verifiedByAdminId': { $exists: true },
-      createdAt: {
-        $gte: new Date(now.getTime() - 15 * 60000) // Last 15 minutes
-      }
-    }).sort({ createdAt: -1 });
-    
-    let adminLocation = null;
-    let isWithinRadius = false;
-    
-    if (adminAttendance && adminAttendance.locationData.verifiedByAdminLocation) {
-      adminLocation = adminAttendance.locationData.verifiedByAdminLocation;
-      const distance = calculateDistance(
-        adminLocation.latitude,
-        adminLocation.longitude,
-        meeting.location.latitude,
-        meeting.location.longitude
-      );
-      isWithinRadius = distance <= meeting.location.radius;
-    }
-    
-    // Calculate confidence score
-    const confidenceScore = calculateConfidenceScore('sms', { isWithinRadius }, meeting);
-    
-    // Create SMS log
-    const smsLog = await SMSLog.create({
-      meetingId: meeting._id,
-      organizationId: meeting.organizationId,
-      fromNumber: From,
-      toNumber: To,
-      message: Body,
-      status: 'received'
-    });
-    
-    // Create attendance record
-    const attendanceRecord = await AttendanceRecord.create({
-      meetingId: meeting._id,
-      organizationId: meeting.organizationId,
-      verificationType: 'sms',
-      attendeeInfo: {
-        fullName,
-        phone: From
-      },
-      locationData: {
-        verifiedByAdminLocation: adminLocation,
-        distanceFromVenue: adminLocation ? 
-          calculateDistance(
-            adminLocation.latitude,
-            adminLocation.longitude,
-            meeting.location.latitude,
-            meeting.location.longitude
-          ) : null,
-        isWithinRadius,
-        address: meeting.location.address
-      },
-      verificationDetails: {
+        meetingId: meeting._id,
+        meetingTitle: meeting.title,
+        verificationType: 'smartphone_gps',
         confidenceScore,
-        verificationMethod: 'SMS',
-        verificationTimestamp: now
-      },
-      timeTracking: {
-        checkInTime: now,
-        meetsTimeRequirement: false
-      },
-      status: confidenceScore >= 60 ? 'pending' : 'flagged'
-    });
-    
-    // Update SMS log with attendance record
-    smsLog.attendanceRecordId = attendanceRecord._id;
-    await smsLog.save();
-    
-    // Send confirmation SMS
-    if (process.env.TWILIO_ACCOUNT_SID) {
-      const client = twilio(
-        process.env.TWILIO_ACCOUNT_SID,
-        process.env.TWILIO_AUTH_TOKEN
-      );
-      
-      await client.messages.create({
-        body: `Attendance received for ${meeting.title}. Your attendance ID: ${attendanceRecord._id}`,
-        from: To,
-        to: From
-      });
-    }
-    
-    res.json({
-      success: true,
-      attendanceId: attendanceRecord._id,
-      status: attendanceRecord.status,
-      message: 'SMS attendance recorded'
-    });
-    
-  } catch (error) {
-    console.error('SMS webhook error:', error);
-    res.status(500).json({ error: 'Failed to process SMS' });
-  }
-});
-
-// Add these new routes after line 1100
-
-// ================= REAL-TIME MONITORING APIs =================
-
-// Update location for continuous monitoring
-app.post('/api/attendance/:attendanceId/location', async (req, res) => {
-  try {
-    const { latitude, longitude, accuracy, meetingCode } = req.body;
-    
-    const attendance = await AttendanceRecord.findOne({
-      _id: req.params.attendanceId
-    }).populate('meetingId');
-    
-    if (!attendance) {
-      return res.status(404).json({ error: 'Attendance record not found' });
-    }
-    
-    const meeting = attendance.meetingId;
-    
-    // Verify meeting code
-    if (meeting.accessCodes.publicCode !== meetingCode) {
-      return res.status(403).json({ error: 'Invalid meeting code' });
-    }
-    
-    const now = new Date();
-    
-    // Check if still within radius
-    const distance = calculateDistance(
-      latitude,
-      longitude,
-      meeting.location.latitude,
-      meeting.location.longitude
-    );
-    
-    const isWithinRadius = distance <= meeting.location.radius;
-    
-    // Update location history
-    if (!attendance.timeTracking.locationHistory) {
-      attendance.timeTracking.locationHistory = [];
-    }
-    
-    attendance.timeTracking.locationHistory.push({
-      timestamp: now,
-      latitude,
-      longitude,
-      accuracy,
-      isWithinRadius
-    });
-    
-    attendance.timeTracking.lastLocationCheck = now;
-    
-    // Check for excessive absence
-    if (meeting.timeVerification?.enableContinuousMonitoring) {
-      const recentLocations = attendance.timeTracking.locationHistory
-        .filter(loc => new Date(loc.timestamp) > new Date(now.getTime() - 10 * 60000)) // Last 10 minutes
-        .filter(loc => loc.isWithinRadius);
-      
-      const presencePercentage = (recentLocations.length / 10) * 100; // Assuming 1 check per minute
-      
-      if (presencePercentage < 80) { // Less than 80% presence
-        attendance.auditTrail.push({
-          action: 'LOW_PRESENCE_WARNING',
-          performedBy: null,
-          notes: `Low presence detected: ${presencePercentage.toFixed(1)}% in last 10 minutes`
-        });
-      }
-    }
-    
-    await attendance.save();
-    
-    res.json({
-      success: true,
-      isWithinRadius,
-      distance,
-      lastCheck: now,
-      totalChecks: attendance.timeTracking.locationHistory.length
-    });
-    
-  } catch (error) {
-    console.error('Location update error:', error);
-    res.status(500).json({ error: 'Failed to update location' });
-  }
-});
-
-// Get real-time attendance monitoring
-app.get('/api/meetings/:meetingId/monitor', authenticateToken, async (req, res) => {
-  try {
-    const meeting = await Meeting.findOne({
-      _id: req.params.meetingId,
-      organizationId: req.user.organizationId._id
-    });
-    
-    if (!meeting) {
-      return res.status(404).json({ error: 'Meeting not found' });
-    }
-    
-    // Get active attendance records
-    const activeAttendances = await AttendanceRecord.find({
-      meetingId: meeting._id,
-      status: { $in: ['pending', 'verified'] },
-      'timeTracking.checkOutTime': { $exists: false }
-    })
-    .select('attendeeInfo.fullName verificationType timeTracking locationData verificationDetails')
-    .lean();
-    
-    // Enrich with monitoring data
-    const monitoredAttendances = activeAttendances.map(attendance => {
-      const checkInTime = new Date(attendance.timeTracking.checkInTime);
-      const now = new Date();
-      const durationMinutes = Math.round((now - checkInTime) / (1000 * 60));
-      
-      return {
-        ...attendance,
-        durationMinutes,
-        meetsMinimumStay: durationMinutes >= (meeting.timeVerification?.minimumStayMinutes || 0),
-        lastLocationCheck: attendance.timeTracking.lastLocationCheck,
-        locationChecks: attendance.timeTracking.locationHistory?.length || 0,
-        isCurrentlyPresent: attendance.timeTracking.locationHistory?.slice(-1)[0]?.isWithinRadius || false
-      };
-    });
-    
-    res.json({
-      meetingId: meeting._id,
-      title: meeting.title,
-      timeVerificationEnabled: meeting.timeVerification?.requireMinimumStay || false,
-      monitoringEnabled: meeting.timeVerification?.enableContinuousMonitoring || false,
-      totalActive: monitoredAttendances.length,
-      attendees: monitoredAttendances
-    });
-    
-  } catch (error) {
-    console.error('Monitor error:', error);
-    res.status(500).json({ error: 'Failed to fetch monitoring data' });
-  }
-});
-
-// Manually verify time-based attendance
-app.post('/api/attendance/:attendanceId/verify-time', authenticateToken, async (req, res) => {
-  try {
-    const { notes } = req.body;
-    
-    const attendance = await AttendanceRecord.findOne({
-      _id: req.params.attendanceId,
-      organizationId: req.user.organizationId._id
-    }).populate('meetingId');
-    
-    if (!attendance) {
-      return res.status(404).json({ error: 'Attendance record not found' });
-    }
-    
-    const meeting = attendance.meetingId;
-    
-    // Check time verification requirements
-    if (!meeting.timeVerification?.requireMinimumStay) {
-      return res.status(400).json({ error: 'Time verification not required for this meeting' });
-    }
-    
-    const checkInTime = new Date(attendance.timeTracking.checkInTime);
-    const now = new Date();
-    const durationMinutes = Math.round((now - checkInTime) / (1000 * 60));
-    
-    const meetsMinimumStay = durationMinutes >= meeting.timeVerification.minimumStayMinutes;
-    
-    if (!meetsMinimumStay) {
-      return res.status(400).json({ 
-        error: 'Minimum stay requirement not met',
-        currentDuration: durationMinutes,
-        requiredDuration: meeting.timeVerification.minimumStayMinutes
-      });
-    }
-    
-    // Verify attendance
-    attendance.status = 'verified';
-    attendance.verificationDetails.confidenceScore = Math.min(
-      attendance.verificationDetails.confidenceScore + 20,
-      100
-    );
-    attendance.verificationDetails.timeVerified = now;
-    attendance.verificationDetails.timeVerifiedBy = req.user._id;
-    
-    attendance.auditTrail.push({
-      action: 'TIME_VERIFICATION',
-      performedBy: req.user._id,
-      notes: `Time verification: ${durationMinutes} minutes attendance. ${notes || ''}`
-    });
-    
-    attendance.updatedAt = now;
-    await attendance.save();
-    
-    await AuditLog.create({
-      organizationId: req.user.organizationId._id,
-      userId: req.user._id,
-      action: 'ATTENDANCE_TIME_VERIFIED',
-      entityType: 'attendance',
-      entityId: attendance._id,
-      details: {
-        attendeeName: attendance.attendeeInfo.fullName,
-        durationMinutes,
-        requiredMinutes: meeting.timeVerification.minimumStayMinutes
+        status,
+        locationValidated: locationValidation.isWithinRadius
       },
       ipAddress: req.ip,
-      userAgent: req.get('User-Agent')
+      userAgent: req.get('User-Agent'),
+      severity: 'info'
     });
     
-    res.json({
-      success: true,
-      attendanceId: attendance._id,
-      status: attendance.status,
-      durationMinutes,
-      confidenceScore: attendance.verificationDetails.confidenceScore,
-      message: 'Attendance time-verified successfully'
-    });
-    
-  } catch (error) {
-    console.error('Time verification error:', error);
-    res.status(500).json({ error: 'Failed to verify attendance time' });
-  }
-});
-
-
-
-// Add these routes after line 1250
-
-// ================= ENHANCED EXPORT APIs =================
-
-// Export all meetings as PDF
-app.get('/api/organization/meetings/export/pdf', authenticateToken, async (req, res) => {
-  try {
-    const { startDate, endDate, status } = req.query;
-    
-    const query = {
-      organizationId: req.user.organizationId._id
-    };
-    
-    if (startDate && endDate) {
-      query['schedule.startTime'] = {
-        $gte: new Date(startDate),
-        $lte: new Date(endDate)
-      };
-    }
-    
-    if (status) {
-      query.status = status;
-    }
-    
-    const meetings = await Meeting.find(query)
-      .populate('createdBy', 'fullName')
-      .sort({ 'schedule.startTime': -1 })
-      .lean();
-    
-    // Get attendance counts for each meeting
-    for (const meeting of meetings) {
-      const attendanceCount = await AttendanceRecord.countDocuments({
-        meetingId: meeting._id
-      });
-      meeting.attendanceCount = attendanceCount;
-    }
-    
-    const organization = await Organization.findById(req.user.organizationId._id);
-    
-    // Generate PDF
-    const pdfBuffer = await generateAllMeetingsPDF(
-      meetings, 
-      organization, 
-      startDate || new Date(0), 
-      endDate || new Date()
-    );
-    
-    await AuditLog.create({
-      organizationId: req.user.organizationId._id,
-      userId: req.user._id,
-      action: 'EXPORT_ALL_MEETINGS_PDF',
-      entityType: 'organization',
-      entityId: organization._id,
-      details: { 
-        meetingCount: meetings.length,
-        dateRange: { startDate, endDate }
-      },
-      ipAddress: req.ip,
-      userAgent: req.get('User-Agent')
-    });
-    
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="all-meetings-${moment().format('YYYY-MM-DD')}.pdf"`);
-    res.send(pdfBuffer);
-    
-  } catch (error) {
-    console.error('Export all meetings PDF error:', error);
-    res.status(500).json({ error: 'Failed to generate PDF' });
-  }
-});
-
-// Export all meetings as Excel
-app.get('/api/organization/meetings/export/excel', authenticateToken, async (req, res) => {
-  try {
-    const { startDate, endDate, status } = req.query;
-    
-    const query = {
-      organizationId: req.user.organizationId._id
-    };
-    
-    if (startDate && endDate) {
-      query['schedule.startTime'] = {
-        $gte: new Date(startDate),
-        $lte: new Date(endDate)
-      };
-    }
-    
-    if (status) {
-      query.status = status;
-    }
-    
-    const meetings = await Meeting.find(query)
-      .populate('createdBy', 'fullName')
-      .sort({ 'schedule.startTime': -1 })
-      .lean();
-    
-    const organization = await Organization.findById(req.user.organizationId._id);
-    
-    // Create workbook
-    const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet('All Meetings');
-    
-    // Header
-    worksheet.mergeCells('A1:H1');
-    worksheet.getCell('A1').value = organization.name;
-    worksheet.getCell('A1').font = { size: 16, bold: true };
-    worksheet.getCell('A1').alignment = { horizontal: 'center' };
-    
-    worksheet.mergeCells('A2:H2');
-    worksheet.getCell('A2').value = 'All Meetings Report';
-    worksheet.getCell('A2').font = { size: 14, bold: true };
-    worksheet.getCell('A2').alignment = { horizontal: 'center' };
-    
-    // Date range
-    if (startDate && endDate) {
-      worksheet.mergeCells('A3:H3');
-      worksheet.getCell('A3').value = `Period: ${moment(startDate).format('MMM DD, YYYY')} to ${moment(endDate).format('MMM DD, YYYY')}`;
-      worksheet.getCell('A3').alignment = { horizontal: 'center' };
-    }
-    
-    // Table header
-    const headerRow = 5;
-    const headers = ['Title', 'Date', 'Time', 'Location', 'Status', 'Created By', 'Attendees', 'Duration'];
-    
-    headers.forEach((header, index) => {
-      const cell = worksheet.getCell(headerRow, index + 1);
-      cell.value = header;
-      cell.font = { bold: true };
-      cell.fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: 'FFE0E0E0' }
-      };
-      cell.border = {
-        top: { style: 'thin' },
-        left: { style: 'thin' },
-        bottom: { style: 'thin' },
-        right: { style: 'thin' }
-      };
-    });
-    
-    // Add meetings data
-    for (let i = 0; i < meetings.length; i++) {
-      const meeting = meetings[i];
-      const row = headerRow + i + 1;
-      
-      // Get attendance count
-      const attendanceCount = await AttendanceRecord.countDocuments({
-        meetingId: meeting._id
-      });
-      
-      // Calculate duration
-      const start = new Date(meeting.schedule.startTime);
-      const end = new Date(meeting.schedule.endTime);
-      const durationHours = Math.round((end - start) / (1000 * 60 * 60) * 10) / 10;
-      
-      worksheet.getCell(`A${row}`).value = meeting.title;
-      worksheet.getCell(`B${row}`).value = moment(meeting.schedule.startTime).format('YYYY-MM-DD');
-      worksheet.getCell(`C${row}`).value = moment(meeting.schedule.startTime).format('HH:mm');
-      worksheet.getCell(`D${row}`).value = meeting.location.name;
-      worksheet.getCell(`E${row}`).value = meeting.status.toUpperCase();
-      worksheet.getCell(`F${row}`).value = meeting.createdBy?.fullName || 'Unknown';
-      worksheet.getCell(`G${row}`).value = attendanceCount;
-      worksheet.getCell(`H${row}`).value = durationHours;
-      
-      // Color code status
-      const statusCell = worksheet.getCell(`E${row}`);
-      const statusColors = {
-        'draft': 'FFFFCC',
-        'active': 'CCFFCC',
-        'in_progress': '00FF00',
-        'completed': 'CCCCCC',
-        'cancelled': 'FFCCCC'
-      };
-      
-      statusCell.fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: statusColors[meeting.status] || 'FFFFFF' }
-      };
-      
-      // Add borders
-      for (let j = 1; j <= headers.length; j++) {
-        const cell = worksheet.getCell(row, j);
-        cell.border = {
-          top: { style: 'thin' },
-          left: { style: 'thin' },
-          bottom: { style: 'thin' },
-          right: { style: 'thin' }
-        };
-      }
-    }
-    
-    // Auto fit columns
-    worksheet.columns.forEach(column => {
-      let maxLength = 0;
-      column.eachCell({ includeEmpty: true }, cell => {
-        const columnLength = cell.value ? cell.value.toString().length : 10;
-        if (columnLength > maxLength) {
-          maxLength = columnLength;
-        }
-      });
-      column.width = Math.min(maxLength + 2, 30);
-    });
-    
-    // Generate buffer
-    const buffer = await workbook.xlsx.writeBuffer();
-    
-    await AuditLog.create({
-      organizationId: req.user.organizationId._id,
-      userId: req.user._id,
-      action: 'EXPORT_ALL_MEETINGS_EXCEL',
-      entityType: 'organization',
-      entityId: organization._id,
-      details: { meetingCount: meetings.length },
-      ipAddress: req.ip,
-      userAgent: req.get('User-Agent')
-    });
-    
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', `attachment; filename="all-meetings-${moment().format('YYYY-MM-DD')}.xlsx"`);
-    res.send(buffer);
-    
-  } catch (error) {
-    console.error('Export all meetings Excel error:', error);
-    res.status(500).json({ error: 'Failed to generate Excel' });
-  }
-});
-
-// USSD Attendance
-// USSD Attendance
-app.post('/api/ussd', async (req, res) => {
-  try {
-    const { sessionId, phoneNumber, text, networkCode } = req.body;
-    
-    let response = "";
-    let ussdResponseType = "Continue"; // "Continue" or "End"
-    
-    // Find or create USSD session
-    let ussdSession = await USSDSession.findOne({ sessionId });
-    
-    if (!ussdSession) {
-      // New session
-      ussdSession = await USSDSession.create({
-        sessionId,
-        organizationId: null, // Will be set when meeting code is entered
-        phoneNumber,
-        currentStep: 'welcome',
-        data: {}
-      });
-      
-      response = "Welcome to GeoSecure Attendance\n";
-      response += "Enter Meeting Code:";
-    } else {
-      // Existing session - process input
-      const input = text.split('*').pop(); // Get last input
-      
-      switch(ussdSession.currentStep) {
-        case 'welcome':
-          // Meeting code input
-          ussdSession.data.meetingCode = input;
-          
-          // Find meeting
-          const foundMeeting1 = await Meeting.findOne({
-            'accessCodes.ussdCode': input,
-            status: { $in: ['active', 'in_progress'] }
-          });
-          
-          if (!foundMeeting1) {
-            response = "Invalid meeting code or meeting not active\n";
-            ussdResponseType = "End";
-            ussdSession.isActive = false;
-          } else {
-            ussdSession.meetingId = foundMeeting1._id;
-            ussdSession.organizationId = foundMeeting1.organizationId;
-            ussdSession.currentStep = 'name';
-            response = "Enter your full name:";
-          }
-          break;
-          
-        case 'name':
-          ussdSession.data.fullName = input;
-          ussdSession.currentStep = 'phone';
-          response = "Enter your phone number (if different from calling number):";
-          break;
-          
-        case 'phone':
-          ussdSession.data.phone = input || phoneNumber;
-          ussdSession.currentStep = 'id';
-          response = "Enter your ID number (optional):\nPress # to skip";
-          break;
-          
-        case 'id':
-          if (input !== '#') {
-            ussdSession.data.idNumber = input;
-          }
-          
-          // Process attendance
-          const foundMeeting2 = await Meeting.findById(ussdSession.meetingId);
-          
-          if (!foundMeeting2) {
-            response = "Meeting not found\n";
-            ussdResponseType = "End";
-            ussdSession.isActive = false;
-            break;
-          }
-          
-          // Check if USSD attendance is allowed
-          if (!foundMeeting2.attendanceConfig.allowedModes.ussd) {
-            response = "USSD attendance not allowed for this meeting\n";
-            ussdResponseType = "End";
-            ussdSession.isActive = false;
-            break;
-          }
-          
-          // Check time window
-          const now = new Date();
-          if (now < foundMeeting2.schedule.attendanceStart || now > foundMeeting2.schedule.attendanceEnd) {
-            response = "Attendance outside allowed time window\n";
-            ussdResponseType = "End";
-            ussdSession.isActive = false;
-            break;
-          }
-          
-          // Check for duplicates
-          const duplicate = await AttendanceRecord.findOne({
-            meetingId: foundMeeting2._id,
-            'attendeeInfo.phone': ussdSession.data.phone,
-            status: { $in: ['pending', 'verified'] },
-            createdAt: {
-              $gte: new Date(now.getTime() - foundMeeting2.attendanceConfig.duplicatePrevention.timeWindowMinutes * 60000)
-            }
-          });
-          
-          if (duplicate) {
-            response = "Duplicate attendance detected\n";
-            ussdResponseType = "End";
-            ussdSession.isActive = false;
-            break;
-          }
-          
-          // Get admin location
-          const adminAttendance = await AttendanceRecord.findOne({
-            meetingId: foundMeeting2._id,
-            verificationType: 'manual',
-            'verificationDetails.verifiedByAdminId': { $exists: true },
-            createdAt: {
-              $gte: new Date(now.getTime() - 15 * 60000)
-            }
-          }).sort({ createdAt: -1 });
-          
-          let adminLocation = null;
-          let isWithinRadius = false;
-          
-          if (adminAttendance && adminAttendance.locationData.verifiedByAdminLocation) {
-            adminLocation = adminAttendance.locationData.verifiedByAdminLocation;
-            const distance = calculateDistance(
-              adminLocation.latitude,
-              adminLocation.longitude,
-              foundMeeting2.location.latitude,
-              foundMeeting2.location.longitude
-            );
-            isWithinRadius = distance <= foundMeeting2.location.radius;
-          }
-          
-          // Calculate confidence score
-          const confidenceScore = calculateConfidenceScore('ussd', { isWithinRadius }, foundMeeting2);
-          
-          // Create attendance record
-          const attendanceRecord = await AttendanceRecord.create({
-            meetingId: foundMeeting2._id,
-            organizationId: foundMeeting2.organizationId,
-            verificationType: 'ussd',
-            attendeeInfo: {
-              fullName: ussdSession.data.fullName,
-              phone: ussdSession.data.phone,
-              idNumber: ussdSession.data.idNumber
-            },
-            locationData: {
-              verifiedByAdminLocation: adminLocation,
-              distanceFromVenue: adminLocation ? 
-                calculateDistance(
-                  adminLocation.latitude,
-                  adminLocation.longitude,
-                  foundMeeting2.location.latitude,
-                  foundMeeting2.location.longitude
-                ) : null,
-              isWithinRadius,
-              address: foundMeeting2.location.address
-            },
-            verificationDetails: {
-              confidenceScore,
-              verificationMethod: 'USSD',
-              verificationTimestamp: now
-            },
-            timeTracking: {
-              checkInTime: now,
-              meetsTimeRequirement: false
-            },
-            status: confidenceScore >= 60 ? 'pending' : 'flagged'
-          });
-          
-          response = `Attendance recorded successfully!\n`;
-          response += `Name: ${ussdSession.data.fullName}\n`;
-          response += `Meeting: ${foundMeeting2.title}\n`;
-          response += `Status: ${attendanceRecord.status === 'verified' ? 'Verified' : 'Pending Verification'}\n`;
-          response += `Thank you!`;
-          
-          ussdResponseType = "End";
-          ussdSession.isActive = false;
-          break;
-      }
-      
-      ussdSession.lastActivity = new Date();
-      await ussdSession.save();
-    }
-    
-    res.set('Content-Type', 'text/plain');
-    res.send(`${ussdResponseType} ${response}`);
-    
-  } catch (error) {
-    console.error('USSD error:', error);
-    res.set('Content-Type', 'text/plain');
-    res.send('End An error occurred. Please try again.');
-  }
-});
-
-// Kiosk Attendance
-app.post('/api/attend/kiosk', authenticateToken, async (req, res) => {
-  try {
-    const { meetingId, attendeeInfo, adminLocation } = req.body;
-    
-    // Find meeting
-    const meeting = await Meeting.findOne({
-      _id: meetingId,
-      organizationId: req.user.organizationId._id,
-      status: { $in: ['active', 'in_progress'] }
-    });
-    
-    if (!meeting) {
-      return res.status(404).json({ error: 'Meeting not found or not active' });
-    }
-    
-    // Check if kiosk attendance is allowed
-    if (!meeting.attendanceConfig.allowedModes.kiosk) {
-      return res.status(403).json({ error: 'Kiosk attendance not allowed for this meeting' });
-    }
-    
-    // Check time window
-    const now = new Date();
-    if (now < meeting.schedule.attendanceStart || now > meeting.schedule.attendanceEnd) {
-      return res.status(403).json({ error: 'Attendance outside allowed time window' });
-    }
-    
-    // Validate admin location
-    const distance = calculateDistance(
-      adminLocation.latitude,
-      adminLocation.longitude,
-      meeting.location.latitude,
-      meeting.location.longitude
-    );
-    
-    const isWithinRadius = distance <= meeting.location.radius;
-    
-    if (!isWithinRadius) {
-      return res.status(403).json({ 
-        error: 'Admin device not within meeting radius',
-        distance,
-        allowedRadius: meeting.location.radius
-      });
-    }
-    
-    // Check for duplicates
-    const duplicateChecks = [];
-    
-    if (meeting.attendanceConfig.duplicatePrevention.preventSamePhone && attendeeInfo.phone) {
-      duplicateChecks.push({
-        'attendeeInfo.phone': attendeeInfo.phone,
-        'meetingId': meeting._id,
-        status: { $in: ['pending', 'verified'] },
-        createdAt: {
-          $gte: new Date(now.getTime() - meeting.attendanceConfig.duplicatePrevention.timeWindowMinutes * 60000)
-        }
-      });
-    }
-    
-    if (meeting.attendanceConfig.duplicatePrevention.preventSameNameTime && attendeeInfo.fullName) {
-      duplicateChecks.push({
-        'attendeeInfo.fullName': attendeeInfo.fullName,
-        'meetingId': meeting._id,
-        status: { $in: ['pending', 'verified'] },
-        createdAt: {
-          $gte: new Date(now.getTime() - meeting.attendanceConfig.duplicatePrevention.timeWindowMinutes * 60000)
-        }
-      });
-    }
-    
-    if (duplicateChecks.length > 0) {
-      const duplicate = await AttendanceRecord.findOne({
-        $or: duplicateChecks
-      });
-      
-      if (duplicate) {
-        return res.status(409).json({ 
-          error: 'Duplicate attendance detected',
-          existingRecord: {
-            id: duplicate._id,
-            checkInTime: duplicate.timeTracking.checkInTime,
-            status: duplicate.status
-          }
-        });
-      }
-    }
-    
-    // Calculate confidence score
-    const confidenceScore = calculateConfidenceScore('kiosk', { isWithinRadius }, meeting);
-    
-    // Create attendance record
-    const attendanceRecord = await AttendanceRecord.create({
-      meetingId: meeting._id,
+    // Send notification to admins
+    const admins = await AdminUser.find({
       organizationId: meeting.organizationId,
-      verificationType: 'kiosk',
-      attendeeInfo,
-      locationData: {
-        verifiedByAdminLocation: adminLocation,
-        distanceFromVenue: distance,
-        isWithinRadius: true,
-        address: meeting.location.address
-      },
-      deviceInfo: {
-        userAgent: req.get('User-Agent'),
-        ipAddress: req.ip,
-        deviceId: `kiosk-${req.user._id}`
-      },
-      verificationDetails: {
-        confidenceScore,
-        verificationMethod: 'Kiosk',
-        verificationTimestamp: now,
-        verifiedByAdminId: req.user._id
-      },
-      timeTracking: {
-        checkInTime: now,
-        meetsTimeRequirement: false
-      },
-      status: confidenceScore >= 80 ? 'verified' : 'pending'
+      isActive: true,
+      'permissions.canApproveAttendance': true
     });
     
-    await AuditLog.create({
-      organizationId: req.user.organizationId._id,
-      userId: req.user._id,
-      action: 'KIOSK_ATTENDANCE_RECORDED',
-      entityType: 'attendance',
-      entityId: attendanceRecord._id,
-      details: { attendeeName: attendeeInfo.fullName },
-      ipAddress: req.ip,
-      userAgent: req.get('User-Agent')
-    });
+    for (const admin of admins) {
+      await sendNotification(
+        admin._id,
+        'New Attendance Recorded',
+        `${attendeeInfo.fullName} marked attendance for "${meeting.title}"`,
+        {
+          attendanceId: attendanceRecord._id,
+          meetingId: meeting._id,
+          meetingTitle: meeting.title,
+          attendeeName: attendeeInfo.fullName,
+          verificationType: 'smartphone_gps',
+          status,
+          confidenceScore,
+          organizationId: meeting.organizationId
+        },
+        'attendance'
+      );
+    }
     
     res.status(201).json({
       success: true,
       attendanceId: attendanceRecord._id,
       status: attendanceRecord.status,
       confidenceScore,
-      message: 'Kiosk attendance recorded successfully'
+      locationValidation: {
+        passed: locationValidation.isWithinRadius,
+        distance: locationValidation.distance,
+        radius: meeting.location.radius,
+        accuracy: locationData.accuracy
+      },
+      meetingDetails: {
+        title: meeting.title,
+        location: meeting.location.name,
+        time: moment(meeting.schedule.startTime).format('h:mm A')
+      },
+      nextSteps: status === 'verified' ? 
+        ['You can now participate in the meeting'] :
+        ['Your attendance is pending verification'],
+      timestamp: now
     });
-    
   } catch (error) {
-    console.error('Kiosk attendance error:', error);
-    res.status(500).json({ error: 'Failed to record kiosk attendance' });
+    console.error('Smartphone attendance error:', error);
+    
+    if (error.name === 'ValidationError') {
+      const errors = Object.values(error.errors).map(err => err.message);
+      return res.status(400).json({ 
+        error: 'Validation failed',
+        details: errors,
+        code: 'VALIDATION_ERROR'
+      });
+    }
+    
+    res.status(500).json({ 
+      error: 'Failed to record attendance',
+      code: 'ATTENDANCE_RECORDING_FAILED'
+    });
   }
 });
 
-// Manual Attendance (Admin-assisted)
-app.post('/api/attend/manual', authenticateToken, async (req, res) => {
+/**
+ * @route POST /api/attend/manual
+ * @desc Record manual attendance
+ * @access Private (canApproveAttendance permission)
+ */
+app.post('/api/attend/manual', authenticateToken, checkPermission('canApproveAttendance'), async (req, res) => {
   try {
-    const { meetingId, attendeeInfo, adminLocation, verificationReason } = req.body;
+    const { meetingId, attendeeInfo, formData } = req.body;
+    
+    // Validation
+    if (!meetingId || !attendeeInfo || !attendeeInfo.fullName) {
+      return res.status(400).json({ 
+        error: 'Missing required fields',
+        required: ['meetingId', 'attendeeInfo.fullName'],
+        code: 'MISSING_REQUIRED_FIELDS'
+      });
+    }
     
     // Find meeting
     const meeting = await Meeting.findOne({
       _id: meetingId,
       organizationId: req.user.organizationId._id,
+      deletedAt: null,
       status: { $in: ['active', 'in_progress'] }
     });
     
     if (!meeting) {
-      return res.status(404).json({ error: 'Meeting not found or not active' });
+      return res.status(404).json({ 
+        error: 'Meeting not found or not active',
+        code: 'MEETING_NOT_FOUND'
+      });
     }
     
     // Check if manual attendance is allowed
     if (!meeting.attendanceConfig.allowedModes.manual) {
-      return res.status(403).json({ error: 'Manual attendance not allowed for this meeting' });
+      return res.status(403).json({ 
+        error: 'Manual attendance not allowed for this meeting',
+        code: 'MANUAL_ATTENDANCE_NOT_ALLOWED'
+      });
     }
     
     // Check time window
     const now = new Date();
-    if (now < meeting.schedule.attendanceStart || now > meeting.schedule.attendanceEnd) {
-      return res.status(403).json({ error: 'Attendance outside allowed time window' });
-    }
-    
-    // Validate admin location
-    const distance = calculateDistance(
-      adminLocation.latitude,
-      adminLocation.longitude,
-      meeting.location.latitude,
-      meeting.location.longitude
-    );
-    
-    const isWithinRadius = distance <= meeting.location.radius;
-    
-    if (!isWithinRadius) {
+    if (now < meeting.schedule.attendanceStart) {
       return res.status(403).json({ 
-        error: 'Admin device not within meeting radius',
-        distance,
-        allowedRadius: meeting.location.radius
+        error: 'Attendance not yet started',
+        details: `Attendance starts at ${moment(meeting.schedule.attendanceStart).format('h:mm A')}`,
+        code: 'ATTENDANCE_NOT_STARTED'
       });
     }
     
-    // Check for duplicates
-    const duplicateChecks = [];
-    
-    if (meeting.attendanceConfig.duplicatePrevention.preventSamePhone && attendeeInfo.phone) {
-      duplicateChecks.push({
-        'attendeeInfo.phone': attendeeInfo.phone,
-        'meetingId': meeting._id,
-        status: { $in: ['pending', 'verified'] },
-        createdAt: {
-          $gte: new Date(now.getTime() - meeting.attendanceConfig.duplicatePrevention.timeWindowMinutes * 60000)
-        }
+    if (now > meeting.schedule.attendanceEnd) {
+      return res.status(403).json({ 
+        error: 'Attendance period has ended',
+        details: `Attendance ended at ${moment(meeting.schedule.attendanceEnd).format('h:mm A')}`,
+        code: 'ATTENDANCE_ENDED'
       });
     }
     
-    if (meeting.attendanceConfig.duplicatePrevention.preventSameNameTime && attendeeInfo.fullName) {
-      duplicateChecks.push({
-        'attendeeInfo.fullName': attendeeInfo.fullName,
-        'meetingId': meeting._id,
-        status: { $in: ['pending', 'verified'] },
-        createdAt: {
-          $gte: new Date(now.getTime() - meeting.attendanceConfig.duplicatePrevention.timeWindowMinutes * 60000)
-        }
-      });
-    }
-    
-    if (duplicateChecks.length > 0) {
-      const duplicate = await AttendanceRecord.findOne({
-        $or: duplicateChecks
+    // Check max attendees
+    if (meeting.maxAttendees) {
+      const currentAttendance = await AttendanceRecord.countDocuments({
+        meetingId: meeting._id,
+        deletedAt: null,
+        status: { $in: ['pending', 'verified'] }
       });
       
-      if (duplicate) {
-        return res.status(409).json({ 
-          error: 'Duplicate attendance detected',
-          existingRecord: {
-            id: duplicate._id,
-            checkInTime: duplicate.timeTracking.checkInTime,
-            status: duplicate.status
-          }
+      if (currentAttendance >= meeting.maxAttendees) {
+        return res.status(403).json({
+          error: 'Meeting is full',
+          details: `Maximum ${meeting.maxAttendees} attendees allowed`,
+          code: 'MEETING_FULL'
         });
       }
     }
     
-    // Create attendance record with high confidence for manual verification
+    // Validate custom form fields
+    const additionalFields = new Map();
+    if (formData && meeting.customFormFields) {
+      for (const field of meeting.customFormFields) {
+        if (field.isRequired && (!formData[field.fieldName] || formData[field.fieldName].toString().trim() === '')) {
+          return res.status(400).json({ 
+            error: 'Required information missing',
+            details: `Please provide: ${field.label}`,
+            field: field.fieldName,
+            code: 'REQUIRED_FIELD_MISSING'
+          });
+        }
+        
+        if (formData[field.fieldName]) {
+          additionalFields.set(field.fieldName, formData[field.fieldName].toString().trim());
+        }
+      }
+    }
+    
+    // Create attendance record
     const attendanceRecord = await AttendanceRecord.create({
       meetingId: meeting._id,
       organizationId: meeting.organizationId,
       verificationType: 'manual',
-      attendeeInfo,
-      locationData: {
-        verifiedByAdminLocation: adminLocation,
-        distanceFromVenue: distance,
-        isWithinRadius: true,
-        address: meeting.location.address
-      },
-      deviceInfo: {
-        userAgent: req.get('User-Agent'),
-        ipAddress: req.ip,
-        deviceId: `admin-${req.user._id}`
+      attendeeInfo: {
+        ...attendeeInfo,
+        additionalFields
       },
       verificationDetails: {
-        confidenceScore: 95, // High confidence for admin verification
+        confidenceScore: 95,
         verificationMethod: 'Manual',
         verificationTimestamp: now,
         verifiedByAdminId: req.user._id,
-        manualVerificationReason: verificationReason
+        manualVerificationReason: 'Manually recorded by admin'
       },
       timeTracking: {
         checkInTime: now,
-        meetsTimeRequirement: false
+        meetsTimeRequirement: true
       },
       status: 'verified',
       auditTrail: [{
-        action: 'MANUAL_VERIFICATION',
+        action: 'MANUAL_ATTENDANCE_RECORDED',
         performedBy: req.user._id,
-        notes: `Manually verified by admin: ${verificationReason}`
+        performedByName: req.user.fullName,
+        notes: 'Attendance manually recorded by admin'
       }]
     });
     
+    // Update meeting counts
+    await Meeting.findByIdAndUpdate(meeting._id, {
+      $inc: { 
+        attendanceCount: 1,
+        verifiedCount: 1
+      }
+    });
+    
+    // Create audit log
     await AuditLog.create({
       organizationId: req.user.organizationId._id,
       userId: req.user._id,
+      userEmail: req.user.email,
+      userRole: req.user.role,
       action: 'MANUAL_ATTENDANCE_RECORDED',
       entityType: 'attendance',
       entityId: attendanceRecord._id,
-      details: { 
+      entityName: attendeeInfo.fullName,
+      details: {
+        meetingId: meeting._id,
+        meetingTitle: meeting.title,
         attendeeName: attendeeInfo.fullName,
-        verificationReason 
+        recordedBy: req.user.fullName
       },
       ipAddress: req.ip,
-      userAgent: req.get('User-Agent')
+      userAgent: req.get('User-Agent'),
+      severity: 'info'
     });
     
     res.status(201).json({
       success: true,
       attendanceId: attendanceRecord._id,
       status: attendanceRecord.status,
-      confidenceScore: 95,
-      message: 'Manual attendance recorded successfully'
+      attendeeName: attendeeInfo.fullName,
+      recordedBy: req.user.fullName,
+      timestamp: now
     });
-    
   } catch (error) {
     console.error('Manual attendance error:', error);
-    res.status(500).json({ error: 'Failed to record manual attendance' });
+    
+    if (error.name === 'ValidationError') {
+      const errors = Object.values(error.errors).map(err => err.message);
+      return res.status(400).json({ 
+        error: 'Validation failed',
+        details: errors,
+        code: 'VALIDATION_ERROR'
+      });
+    }
+    
+    res.status(500).json({ 
+      error: 'Failed to record manual attendance',
+      code: 'MANUAL_ATTENDANCE_FAILED'
+    });
   }
 });
 
-// 5. Attendance Management Routes
+// ================= ATTENDANCE MANAGEMENT ROUTES =================
+
+/**
+ * @route GET /api/meetings/:meetingId/attendance
+ * @desc Get attendance records for a meeting
+ * @access Private
+ */
 app.get('/api/meetings/:meetingId/attendance', authenticateToken, async (req, res) => {
   try {
-    const { status, verificationType, startDate, endDate } = req.query;
+    const { 
+      status, 
+      verificationType, 
+      search, 
+      startDate, 
+      endDate, 
+      page = 1, 
+      limit = 50,
+      sortBy = 'createdAt',
+      sortOrder = 'desc'
+    } = req.query;
     
     // Verify meeting belongs to organization
     const meeting = await Meeting.findOne({
       _id: req.params.meetingId,
-      organizationId: req.user.organizationId._id
+      organizationId: req.user.organizationId._id,
+      deletedAt: null
     });
     
     if (!meeting) {
-      return res.status(404).json({ error: 'Meeting not found' });
+      return res.status(404).json({ 
+        error: 'Meeting not found',
+        code: 'MEETING_NOT_FOUND'
+      });
     }
     
     const query = {
       meetingId: meeting._id,
-      organizationId: req.user.organizationId._id
+      deletedAt: null
     };
     
+    // Apply filters
     if (status) query.status = status;
     if (verificationType) query.verificationType = verificationType;
+    
     if (startDate && endDate) {
       query.createdAt = {
         $gte: new Date(startDate),
@@ -3641,86 +4419,199 @@ app.get('/api/meetings/:meetingId/attendance', authenticateToken, async (req, re
       };
     }
     
+    if (search) {
+      query.$or = [
+        { 'attendeeInfo.fullName': { $regex: search, $options: 'i' } },
+        { 'attendeeInfo.phone': { $regex: search, $options: 'i' } },
+        { 'attendeeInfo.email': { $regex: search, $options: 'i' } },
+        { 'attendeeInfo.idNumber': { $regex: search, $options: 'i' } }
+      ];
+    }
+    
+    // Calculate pagination
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    
+    // Get attendance records
     const attendance = await AttendanceRecord.find(query)
-      .sort({ createdAt: -1 })
-      .populate('verificationDetails.verifiedByAdminId', 'fullName email');
+      .populate('verificationDetails.verifiedByAdminId', 'fullName email')
+      .populate('verificationDetails.timeVerifiedBy', 'fullName email')
+      .sort({ [sortBy]: sortOrder === 'desc' ? -1 : 1 })
+      .skip(skip)
+      .limit(parseInt(limit))
+      .lean();
+    
+    // Get total count
+    const total = await AttendanceRecord.countDocuments(query);
     
     // Get summary statistics
-    const total = attendance.length;
-    const verified = attendance.filter(a => a.status === 'verified').length;
-    const pending = attendance.filter(a => a.status === 'pending').length;
-    const flagged = attendance.filter(a => a.status === 'flagged').length;
-    const rejected = attendance.filter(a => a.status === 'rejected').length;
-    
-    const byType = {
-      smartphone_gps: attendance.filter(a => a.verificationType === 'smartphone_gps').length,
-      sms: attendance.filter(a => a.verificationType === 'sms').length,
-      ussd: attendance.filter(a => a.verificationType === 'ussd').length,
-      kiosk: attendance.filter(a => a.verificationType === 'kiosk').length,
-      manual: attendance.filter(a => a.verificationType === 'manual').length
-    };
+    const summary = await AttendanceRecord.aggregate([
+      {
+        $match: { 
+          meetingId: meeting._id,
+          deletedAt: null
+        }
+      },
+      {
+        $facet: {
+          byStatus: [
+            {
+              $group: {
+                _id: '$status',
+                count: { $sum: 1 }
+              }
+            }
+          ],
+          byType: [
+            {
+              $group: {
+                _id: '$verificationType',
+                count: { $sum: 1 }
+              }
+            }
+          ],
+          byHour: [
+            {
+              $group: {
+                _id: { $hour: '$timeTracking.checkInTime' },
+                count: { $sum: 1 }
+              }
+            },
+            {
+              $sort: { _id: 1 }
+            }
+          ]
+        }
+      }
+    ]);
     
     res.json({
+      success: true,
       meeting: {
         id: meeting._id,
         title: meeting.title,
         location: meeting.location
       },
+      attendance,
       summary: {
-        total,
-        verified,
-        pending,
-        flagged,
-        rejected,
-        byType
+        byStatus: summary[0].byStatus.reduce((acc, item) => {
+          acc[item._id] = item.count;
+          return acc;
+        }, {}),
+        byType: summary[0].byType.reduce((acc, item) => {
+          acc[item._id] = item.count;
+          return acc;
+        }, {}),
+        byHour: summary[0].byHour,
+        total
       },
-      attendance
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total,
+        pages: Math.ceil(total / parseInt(limit))
+      }
     });
-    
   } catch (error) {
     console.error('Get attendance error:', error);
-    res.status(500).json({ error: 'Failed to fetch attendance' });
+    res.status(500).json({ 
+      error: 'Failed to fetch attendance',
+      code: 'ATTENDANCE_FETCH_FAILED'
+    });
   }
 });
 
-app.put('/api/attendance/:attendanceId/status', authenticateToken, async (req, res) => {
+/**
+ * @route PUT /api/attendance/:attendanceId/status
+ * @desc Update attendance status
+ * @access Private (canApproveAttendance permission)
+ */
+app.put('/api/attendance/:attendanceId/status', authenticateToken, checkPermission('canApproveAttendance'), async (req, res) => {
   try {
     const { status, notes } = req.body;
     
+    if (!status || !['verified', 'rejected', 'flagged', 'pending'].includes(status)) {
+      return res.status(400).json({ 
+        error: 'Invalid status',
+        code: 'INVALID_STATUS'
+      });
+    }
+    
     const attendance = await AttendanceRecord.findOne({
       _id: req.params.attendanceId,
-      organizationId: req.user.organizationId._id
+      organizationId: req.user.organizationId._id,
+      deletedAt: null
     });
     
     if (!attendance) {
-      return res.status(404).json({ error: 'Attendance record not found' });
+      return res.status(404).json({ 
+        error: 'Attendance record not found',
+        code: 'ATTENDANCE_NOT_FOUND'
+      });
     }
     
     const oldStatus = attendance.status;
     
+    // Update attendance
     attendance.status = status;
-    attendance.auditTrail.push({
-      action: 'STATUS_CHANGE',
-      performedBy: req.user._id,
-      notes: `Changed from ${oldStatus} to ${status}. ${notes || ''}`
-    });
-    attendance.updatedAt = new Date();
+    attendance.verificationDetails.verifiedByAdminId = req.user._id;
+    attendance.verificationDetails.verificationTimestamp = new Date();
     
+    if (notes) {
+      attendance.notes = notes;
+    }
+    
+    attendance.auditTrail.push({
+      action: 'STATUS_UPDATED',
+      performedBy: req.user._id,
+      performedByName: req.user.fullName,
+      notes: `Changed from ${oldStatus} to ${status}. ${notes || ''}`,
+      changes: {
+        oldStatus,
+        newStatus: status,
+        verifiedBy: req.user.fullName
+      }
+    });
+    
+    attendance.updatedAt = new Date();
     await attendance.save();
     
+    // Update meeting counts
+    const updateFields = {};
+    if (oldStatus === 'verified' && status !== 'verified') {
+      updateFields.$inc = { verifiedCount: -1 };
+      if (status === 'pending') updateFields.$inc.pendingCount = 1;
+    } else if (oldStatus !== 'verified' && status === 'verified') {
+      updateFields.$inc = { verifiedCount: 1 };
+      if (oldStatus === 'pending') updateFields.$inc.pendingCount = -1;
+    } else if (oldStatus === 'pending' && status !== 'pending') {
+      updateFields.$inc = { pendingCount: -1 };
+    } else if (oldStatus !== 'pending' && status === 'pending') {
+      updateFields.$inc = { pendingCount: 1 };
+    }
+    
+    if (Object.keys(updateFields).length > 0) {
+      await Meeting.findByIdAndUpdate(attendance.meetingId, updateFields);
+    }
+    
+    // Create audit log
     await AuditLog.create({
       organizationId: req.user.organizationId._id,
       userId: req.user._id,
+      userEmail: req.user.email,
+      userRole: req.user.role,
       action: 'ATTENDANCE_STATUS_UPDATED',
       entityType: 'attendance',
       entityId: attendance._id,
-      details: { 
-        oldStatus, 
+      entityName: attendance.attendeeInfo.fullName,
+      details: {
+        oldStatus,
         newStatus: status,
-        notes 
+        notes,
+        verifiedBy: req.user.fullName
       },
       ipAddress: req.ip,
-      userAgent: req.get('User-Agent')
+      userAgent: req.get('User-Agent'),
+      severity: 'info'
     });
     
     res.json({
@@ -3728,239 +4619,216 @@ app.put('/api/attendance/:attendanceId/status', authenticateToken, async (req, r
       attendance: {
         id: attendance._id,
         status: attendance.status,
-        attendeeName: attendance.attendeeInfo.fullName
+        attendeeName: attendance.attendeeInfo.fullName,
+        verifiedBy: req.user.fullName,
+        verificationTimestamp: attendance.verificationDetails.verificationTimestamp
       }
     });
-    
   } catch (error) {
     console.error('Update attendance status error:', error);
-    res.status(500).json({ error: 'Failed to update attendance status' });
+    res.status(500).json({ 
+      error: 'Failed to update attendance status',
+      code: 'ATTENDANCE_STATUS_UPDATE_FAILED'
+    });
   }
 });
 
-// Check-out for time tracking
-app.post('/api/attendance/:attendanceId/checkout', async (req, res) => {
-  try {
-    const { meetingCode, deviceInfo } = req.body;
-    
-    const attendance = await AttendanceRecord.findOne({
-      _id: req.params.attendanceId,
-      'verificationType': 'smartphone_gps'
-    }).populate('meetingId');
-    
-    if (!attendance) {
-      return res.status(404).json({ error: 'Attendance record not found' });
-    }
-    
-    const meeting = attendance.meetingId;
-    
-    // Verify meeting code
-    if (meeting.accessCodes.publicCode !== meetingCode) {
-      return res.status(403).json({ error: 'Invalid meeting code' });
-    }
-    
-    // Verify device matches
-    if (deviceInfo.deviceId && attendance.deviceInfo.deviceId !== deviceInfo.deviceId) {
-      return res.status(403).json({ error: 'Device mismatch' });
-    }
-    
-    const now = new Date();
-    const checkInTime = new Date(attendance.timeTracking.checkInTime);
-    const duration = Math.round((now - checkInTime) / (1000 * 60)); // minutes
-    
-    attendance.timeTracking.checkOutTime = now;
-    attendance.timeTracking.totalDuration = duration;
-    
-    // Check if meets time requirement
-    const minMinutes = meeting.attendanceConfig.timeRequirement.minimumMinutes;
-    attendance.timeTracking.meetsTimeRequirement = duration >= minMinutes;
-    
-    // Update confidence score based on time spent
-    if (attendance.timeTracking.meetsTimeRequirement) {
-      attendance.verificationDetails.confidenceScore = Math.min(
-        attendance.verificationDetails.confidenceScore + 10,
-        100
-      );
-      
-      if (attendance.status === 'pending' && attendance.verificationDetails.confidenceScore >= 70) {
-        attendance.status = 'verified';
-      }
-    }
-    
-    attendance.auditTrail.push({
-      action: 'CHECKOUT',
-      performedBy: null, // Self checkout
-      notes: `Checked out after ${duration} minutes`
-    });
-    
-    attendance.updatedAt = now;
-    await attendance.save();
-    
-    res.json({
-      success: true,
-      duration,
-      meetsTimeRequirement: attendance.timeTracking.meetsTimeRequirement,
-      confidenceScore: attendance.verificationDetails.confidenceScore,
-      status: attendance.status
-    });
-    
-  } catch (error) {
-    console.error('Checkout error:', error);
-    res.status(500).json({ error: 'Failed to process checkout' });
-  }
-});
+// ================= EXPORT ROUTES =================
 
-// 6. Export Routes
-app.get('/api/meetings/:meetingId/export/pdf', authenticateToken, async (req, res) => {
+/**
+ * @route GET /api/meetings/:meetingId/export/pdf
+ * @desc Export meeting attendance as PDF
+ * @access Private (canExportData permission)
+ */
+app.get('/api/meetings/:meetingId/export/pdf', authenticateToken, checkPermission('canExportData'), async (req, res) => {
   try {
     const meeting = await Meeting.findOne({
       _id: req.params.meetingId,
-      organizationId: req.user.organizationId._id
+      organizationId: req.user.organizationId._id,
+      deletedAt: null
     });
     
     if (!meeting) {
-      return res.status(404).json({ error: 'Meeting not found' });
+      return res.status(404).json({ 
+        error: 'Meeting not found',
+        code: 'MEETING_NOT_FOUND'
+      });
     }
     
     const organization = await Organization.findById(req.user.organizationId._id);
     
-    // Get all attendance records
+    // Get attendance records
     const attendance = await AttendanceRecord.find({
       meetingId: meeting._id,
-      organizationId: req.user.organizationId._id
+      deletedAt: null
     }).sort({ 'attendeeInfo.fullName': 1 });
     
     // Generate PDF
     const pdfBuffer = await generateAttendancePDF(meeting, attendance, organization);
     
-    // Log the export
+    // Create audit log
     await AuditLog.create({
       organizationId: req.user.organizationId._id,
       userId: req.user._id,
+      userEmail: req.user.email,
+      userRole: req.user.role,
       action: 'EXPORT_PDF',
       entityType: 'meeting',
       entityId: meeting._id,
-      details: { recordCount: attendance.length },
+      entityName: meeting.title,
+      details: { 
+        recordCount: attendance.length,
+        format: 'PDF'
+      },
       ipAddress: req.ip,
-      userAgent: req.get('User-Agent')
+      userAgent: req.get('User-Agent'),
+      severity: 'info'
     });
     
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="attendance-${meeting.title}-${moment().format('YYYY-MM-DD')}.pdf"`);
+    res.setHeader('Content-Disposition', `attachment; filename="attendance-${meeting.title.replace(/[^a-z0-9]/gi, '_')}-${moment().format('YYYY-MM-DD')}.pdf"`);
     res.send(pdfBuffer);
-    
   } catch (error) {
     console.error('PDF export error:', error);
-    res.status(500).json({ error: 'Failed to generate PDF' });
+    res.status(500).json({ 
+      error: 'Failed to generate PDF',
+      code: 'PDF_EXPORT_FAILED'
+    });
   }
 });
 
-app.get('/api/meetings/:meetingId/export/excel', authenticateToken, async (req, res) => {
+/**
+ * @route GET /api/meetings/:meetingId/export/excel
+ * @desc Export meeting attendance as Excel
+ * @access Private (canExportData permission)
+ */
+app.get('/api/meetings/:meetingId/export/excel', authenticateToken, checkPermission('canExportData'), async (req, res) => {
   try {
     const meeting = await Meeting.findOne({
       _id: req.params.meetingId,
-      organizationId: req.user.organizationId._id
+      organizationId: req.user.organizationId._id,
+      deletedAt: null
     });
     
     if (!meeting) {
-      return res.status(404).json({ error: 'Meeting not found' });
+      return res.status(404).json({ 
+        error: 'Meeting not found',
+        code: 'MEETING_NOT_FOUND'
+      });
     }
     
     const organization = await Organization.findById(req.user.organizationId._id);
     
-    // Get all attendance records
+    // Get attendance records
     const attendance = await AttendanceRecord.find({
       meetingId: meeting._id,
-      organizationId: req.user.organizationId._id
+      deletedAt: null
     }).sort({ 'attendeeInfo.fullName': 1 });
     
     // Generate Excel
     const excelBuffer = await generateAttendanceExcel(meeting, attendance, organization);
     
-    // Log the export
+    // Create audit log
     await AuditLog.create({
       organizationId: req.user.organizationId._id,
       userId: req.user._id,
+      userEmail: req.user.email,
+      userRole: req.user.role,
       action: 'EXPORT_EXCEL',
       entityType: 'meeting',
       entityId: meeting._id,
-      details: { recordCount: attendance.length },
+      entityName: meeting.title,
+      details: { 
+        recordCount: attendance.length,
+        format: 'Excel'
+      },
       ipAddress: req.ip,
-      userAgent: req.get('User-Agent')
+      userAgent: req.get('User-Agent'),
+      severity: 'info'
     });
     
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', `attachment; filename="attendance-${meeting.title}-${moment().format('YYYY-MM-DD')}.xlsx"`);
+    res.setHeader('Content-Disposition', `attachment; filename="attendance-${meeting.title.replace(/[^a-z0-9]/gi, '_')}-${moment().format('YYYY-MM-DD')}.xlsx"`);
     res.send(excelBuffer);
-    
   } catch (error) {
     console.error('Excel export error:', error);
-    res.status(500).json({ error: 'Failed to generate Excel' });
+    res.status(500).json({ 
+      error: 'Failed to generate Excel',
+      code: 'EXCEL_EXPORT_FAILED'
+    });
   }
 });
 
-// Add this middleware function after other middleware (around line 400)
-const trackAttendanceJoin = async (req, res, next) => {
-  const originalSend = res.send;
-  
-  res.send = function(data) {
-    try {
-      // Check if this is an attendance endpoint
-      if (req.path.includes('/api/attend/') && res.statusCode === 201) {
-        const response = JSON.parse(data);
-        
-        // Emit socket event or log to real-time system
-        if (response.attendanceId) {
-          // In a real implementation, you would emit to WebSocket/Socket.io
-          console.log(`New attendance: ${response.attendanceId}`);
-          
-          // You could also update a Redis cache for real-time dashboards
-        }
-      }
-    } catch (error) {
-      // Don't break the response if tracking fails
-      console.error('Attendance tracking error:', error);
-    }
-    
-    originalSend.call(this, data);
-  };
-  
-  next();
-};
+// ================= ADMIN MANAGEMENT ROUTES =================
 
-// Apply the middleware to attendance routes
-app.use('/api/attend', trackAttendanceJoin);
-
-// 7. Admin Management Routes
-app.get('/api/admins', authenticateToken, isSuperAdmin, async (req, res) => {
+/**
+ * @route GET /api/admins
+ * @desc Get all admins for organization
+ * @access Private (canManageAdmins permission)
+ */
+app.get('/api/admins', authenticateToken, checkPermission('canManageAdmins'), async (req, res) => {
   try {
     const admins = await AdminUser.find({
-      organizationId: req.user.organizationId._id
-    }).select('-password');
+      organizationId: req.user.organizationId._id,
+      deletedAt: null
+    }).select('-password -resetPasswordToken -resetPasswordExpires -twoFactorSecret -loginAttempts -lockUntil');
     
-    res.json(admins);
+    res.json({
+      success: true,
+      admins
+    });
   } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch admins' });
+    console.error('Get admins error:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch admins',
+      code: 'ADMINS_FETCH_FAILED'
+    });
   }
 });
 
-app.post('/api/admins', authenticateToken, isSuperAdmin, async (req, res) => {
+/**
+ * @route POST /api/admins
+ * @desc Create new admin
+ * @access Private (canManageAdmins permission)
+ */
+app.post('/api/admins', authenticateToken, checkPermission('canManageAdmins'), async (req, res) => {
   try {
-    const { email, password, fullName, phone, role, permissions } = req.body;
+    const { email, password, fullName, phone, role, permissions, isActive } = req.body;
+    
+    // Validation
+    if (!email || !password || !fullName) {
+      return res.status(400).json({ 
+        error: 'Missing required fields',
+        required: ['email', 'password', 'fullName'],
+        code: 'MISSING_REQUIRED_FIELDS'
+      });
+    }
+    
+    if (password.length < 8) {
+      return res.status(400).json({ 
+        error: 'Password must be at least 8 characters',
+        code: 'PASSWORD_TOO_SHORT'
+      });
+    }
     
     // Check if user already exists
     const existingUser = await AdminUser.findOne({ 
       email,
-      organizationId: req.user.organizationId._id 
+      organizationId: req.user.organizationId._id,
+      deletedAt: null
     });
     
     if (existingUser) {
-      return res.status(400).json({ error: 'Admin already exists' });
+      return res.status(409).json({ 
+        error: 'Admin already exists',
+        code: 'ADMIN_EXISTS'
+      });
     }
     
     // Hash password
-    const hashedPassword = await bcrypt.hash(password, 10);
+    const hashedPassword = await bcrypt.hash(password, 12);
     
+    // Create admin
     const admin = await AdminUser.create({
       organizationId: req.user.organizationId._id,
       email,
@@ -3968,727 +4836,450 @@ app.post('/api/admins', authenticateToken, isSuperAdmin, async (req, res) => {
       fullName,
       phone,
       role: role || 'admin',
+      isActive: isActive !== undefined ? isActive : true,
       permissions: permissions || {
         canCreateMeetings: true,
         canEditMeetings: true,
         canDeleteMeetings: false,
         canViewReports: true,
         canManageAdmins: false,
-        canApproveAttendance: true
+        canApproveAttendance: true,
+        canExportData: true,
+        canAccessAnalytics: true,
+        canManageOrganization: false
       }
     });
     
+    // Create audit log
     await AuditLog.create({
       organizationId: req.user.organizationId._id,
       userId: req.user._id,
+      userEmail: req.user.email,
+      userRole: req.user.role,
       action: 'ADMIN_CREATED',
       entityType: 'user',
       entityId: admin._id,
-      details: { email, role: admin.role },
+      entityName: admin.fullName,
+      details: {
+        email,
+        role: admin.role,
+        isActive: admin.isActive,
+        createdBy: req.user.fullName
+      },
       ipAddress: req.ip,
-      userAgent: req.get('User-Agent')
+      userAgent: req.get('User-Agent'),
+      severity: 'info'
     });
+    
+    // Send notification to new admin
+    await sendNotification(
+      admin._id,
+      'Welcome to GSAMS!',
+      `You have been added as an admin to ${req.user.organizationId.name} by ${req.user.fullName}.`,
+      {
+        organizationId: req.user.organizationId._id,
+        organizationName: req.user.organizationId.name,
+        addedBy: req.user.fullName,
+        role: admin.role,
+        permissions: admin.permissions
+      },
+      'system'
+    );
     
     res.status(201).json({
-      id: admin._id,
-      email: admin.email,
-      fullName: admin.fullName,
-      role: admin.role,
-      permissions: admin.permissions
+      success: true,
+      admin: {
+        id: admin._id,
+        email: admin.email,
+        fullName: admin.fullName,
+        role: admin.role,
+        isActive: admin.isActive,
+        permissions: admin.permissions,
+        createdAt: admin.createdAt
+      }
     });
-    
   } catch (error) {
     console.error('Create admin error:', error);
-    res.status(500).json({ error: 'Failed to create admin' });
-  }
-});
-
-app.put('/api/admins/:adminId', authenticateToken, isSuperAdmin, async (req, res) => {
-  try {
-    const { role, permissions, isActive } = req.body;
     
-    const admin = await AdminUser.findOneAndUpdate(
-      {
-        _id: req.params.adminId,
-        organizationId: req.user.organizationId._id,
-        role: { $ne: 'super_admin' } // Cannot modify super admin
-      },
-      { 
-        role,
-        permissions,
-        isActive,
-        updatedAt: new Date()
-      },
-      { new: true }
-    ).select('-password');
-    
-    if (!admin) {
-      return res.status(404).json({ error: 'Admin not found or cannot be modified' });
+    if (error.name === 'ValidationError') {
+      const errors = Object.values(error.errors).map(err => err.message);
+      return res.status(400).json({ 
+        error: 'Validation failed',
+        details: errors,
+        code: 'VALIDATION_ERROR'
+      });
     }
     
-    await AuditLog.create({
-      organizationId: req.user.organizationId._id,
-      userId: req.user._id,
-      action: 'ADMIN_UPDATED',
-      entityType: 'user',
-      entityId: admin._id,
-      details: { role, isActive },
-      ipAddress: req.ip,
-      userAgent: req.get('User-Agent')
+    res.status(500).json({ 
+      error: 'Failed to create admin',
+      code: 'ADMIN_CREATION_FAILED'
     });
-    
-    res.json(admin);
-    
-  } catch (error) {
-    console.error('Update admin error:', error);
-    res.status(500).json({ error: 'Failed to update admin' });
   }
 });
 
-// API for location analytics and verification reports
-app.get('/api/meetings/:meetingId/location-analytics', authenticateToken, async (req, res) => {
-  try {
-    const meeting = await Meeting.findOne({
-      _id: req.params.meetingId,
-      organizationId: req.user.organizationId._id
-    });
-    
-    if (!meeting) {
-      return res.status(404).json({ error: 'Meeting not found' });
-    }
-    
-    // Get all attendance records with GPS data
-    const attendanceRecords = await AttendanceRecord.find({
-      meetingId: meeting._id,
-      verificationType: 'smartphone_gps'
-    }).select('locationData verificationDetails status createdAt');
-    
-    // Calculate location analytics
-    const analytics = {
-      totalGPSAttendance: attendanceRecords.length,
-      byAccuracy: {
-        excellent: attendanceRecords.filter(r => r.locationData.coordinates?.accuracy < 10).length,
-        good: attendanceRecords.filter(r => r.locationData.coordinates?.accuracy >= 10 && r.locationData.coordinates?.accuracy < 50).length,
-        fair: attendanceRecords.filter(r => r.locationData.coordinates?.accuracy >= 50 && r.locationData.coordinates?.accuracy < 100).length,
-        poor: attendanceRecords.filter(r => r.locationData.coordinates?.accuracy >= 100).length
-      },
-      byDistance: {
-        within50m: attendanceRecords.filter(r => r.locationData.distanceFromVenue <= 50).length,
-        within100m: attendanceRecords.filter(r => r.locationData.distanceFromVenue > 50 && r.locationData.distanceFromVenue <= 100).length,
-        beyond100m: attendanceRecords.filter(r => r.locationData.distanceFromVenue > 100).length
-      },
-      confidenceDistribution: {
-        high: attendanceRecords.filter(r => r.verificationDetails.confidenceScore >= 80).length,
-        medium: attendanceRecords.filter(r => r.verificationDetails.confidenceScore >= 50 && r.verificationDetails.confidenceScore < 80).length,
-        low: attendanceRecords.filter(r => r.verificationDetails.confidenceScore < 50).length
-      },
-      flaggedLocations: attendanceRecords.filter(r => 
-        r.locationData.validationDetails?.spoofingDetection?.isSuspicious
-      ).length,
-      averageDistance: attendanceRecords.reduce((sum, r) => sum + (r.locationData.distanceFromVenue || 0), 0) / attendanceRecords.length,
-      averageAccuracy: attendanceRecords.reduce((sum, r) => sum + (r.locationData.coordinates?.accuracy || 0), 0) / attendanceRecords.length,
-      averageConfidence: attendanceRecords.reduce((sum, r) => sum + (r.verificationDetails.confidenceScore || 0), 0) / attendanceRecords.length
-    };
-    
-    // Get location clusters (simplified)
-    const locationClusters = {};
-    attendanceRecords.forEach(record => {
-      if (record.locationData.coordinates) {
-        const lat = record.locationData.coordinates.latitude.toFixed(4);
-        const lon = record.locationData.coordinates.longitude.toFixed(4);
-        const key = `${lat},${lon}`;
-        
-        if (!locationClusters[key]) {
-          locationClusters[key] = {
-            coordinates: { latitude: parseFloat(lat), longitude: parseFloat(lon) },
-            count: 0,
-            attendees: []
-          };
-        }
-        
-        locationClusters[key].count++;
-        locationClusters[key].attendees.push({
-          name: record.attendeeInfo?.fullName,
-          distance: record.locationData.distanceFromVenue,
-          accuracy: record.locationData.coordinates.accuracy,
-          confidence: record.verificationDetails.confidenceScore
-        });
-      }
-    });
-    
-    res.json({
-      meeting: {
-        id: meeting._id,
-        title: meeting.title,
-        location: meeting.location,
-        verificationStrictness: meeting.attendanceConfig.verificationStrictness
-      },
-      analytics,
-      locationClusters: Object.values(locationClusters),
-      summary: {
-        locationVerificationSuccessRate: (attendanceRecords.filter(r => r.status !== 'rejected').length / attendanceRecords.length * 100).toFixed(1),
-        averageLocationQuality: analytics.averageAccuracy < 20 ? 'Excellent' : 
-                              analytics.averageAccuracy < 50 ? 'Good' : 
-                              analytics.averageAccuracy < 100 ? 'Fair' : 'Poor',
-        recommendations: analytics.flaggedLocations > 0 ? 
-          ['Review flagged locations for potential spoofing'] :
-          ['Location verification is working well']
-      }
-    });
-    
-  } catch (error) {
-    console.error('Location analytics error:', error);
-    res.status(500).json({ error: 'Failed to generate location analytics' });
-  }
-});
+// ================= DASHBOARD & ANALYTICS ROUTES =================
 
-// 8. Dashboard & Analytics Routes
+/**
+ * @route GET /api/dashboard/stats
+ * @desc Get dashboard statistics
+ * @access Private
+ */
 app.get('/api/dashboard/stats', authenticateToken, async (req, res) => {
   try {
     const now = new Date();
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
     
-    // Get total meetings
-    const totalMeetings = await Meeting.countDocuments({
-      organizationId: req.user.organizationId._id
-    });
-    
-    // Get active meetings
-    const activeMeetings = await Meeting.countDocuments({
-      organizationId: req.user.organizationId._id,
-      status: 'in_progress'
-    });
-    
-    // Get upcoming meetings
-    const upcomingMeetings = await Meeting.countDocuments({
-      organizationId: req.user.organizationId._id,
-      'schedule.startTime': { $gt: now },
-      status: { $in: ['draft', 'active'] }
-    });
-    
-    // Get total attendance records
-    const totalAttendance = await AttendanceRecord.countDocuments({
-      organizationId: req.user.organizationId._id,
-      createdAt: { $gte: thirtyDaysAgo }
-    });
-    
-    // Get today's attendance
-    const todayStart = new Date(now.setHours(0, 0, 0, 0));
-    const todayEnd = new Date(now.setHours(23, 59, 59, 999));
-    
-    const todayAttendance = await AttendanceRecord.countDocuments({
-      organizationId: req.user.organizationId._id,
-      createdAt: { $gte: todayStart, $lte: todayEnd }
-    });
-    
-    // Get attendance by type
-    const attendanceByType = await AttendanceRecord.aggregate([
-      {
-        $match: {
-          organizationId: req.user.organizationId._id,
-          createdAt: { $gte: thirtyDaysAgo }
+    // Get statistics using aggregation
+    const stats = await Promise.all([
+      // Total meetings
+      Meeting.countDocuments({ 
+        organizationId: req.user.organizationId._id,
+        deletedAt: null 
+      }),
+      
+      // Active meetings
+      Meeting.countDocuments({ 
+        organizationId: req.user.organizationId._id,
+        status: 'in_progress',
+        deletedAt: null 
+      }),
+      
+      // Upcoming meetings
+      Meeting.countDocuments({ 
+        organizationId: req.user.organizationId._id,
+        status: { $in: ['draft', 'scheduled', 'active'] },
+        'schedule.startTime': { $gt: now },
+        deletedAt: null 
+      }),
+      
+      // Total attendance (last 30 days)
+      AttendanceRecord.countDocuments({ 
+        organizationId: req.user.organizationId._id,
+        createdAt: { $gte: thirtyDaysAgo },
+        deletedAt: null 
+      }),
+      
+      // Today's attendance
+      AttendanceRecord.countDocuments({ 
+        organizationId: req.user.organizationId._id,
+        createdAt: { 
+          $gte: new Date(now.setHours(0, 0, 0, 0)),
+          $lte: new Date(now.setHours(23, 59, 59, 999))
+        },
+        deletedAt: null 
+      }),
+      
+      // Attendance by type
+      AttendanceRecord.aggregate([
+        {
+          $match: {
+            organizationId: req.user.organizationId._id,
+            createdAt: { $gte: thirtyDaysAgo },
+            deletedAt: null
+          }
+        },
+        {
+          $group: {
+            _id: '$verificationType',
+            count: { $sum: 1 }
+          }
         }
-      },
-      {
-        $group: {
-          _id: '$verificationType',
-          count: { $sum: 1 }
-        }
-      }
+      ]),
+      
+      // Recent meetings
+      Meeting.find({
+        organizationId: req.user.organizationId._id,
+        deletedAt: null
+      })
+      .sort({ createdAt: -1 })
+      .limit(5)
+      .populate('createdBy', 'fullName')
+      .lean(),
+      
+      // Recent attendance
+      AttendanceRecord.find({
+        organizationId: req.user.organizationId._id,
+        deletedAt: null
+      })
+      .populate('meetingId', 'title')
+      .sort({ createdAt: -1 })
+      .limit(10)
+      .select('attendeeInfo.fullName verificationType status createdAt meetingId')
+      .lean()
     ]);
     
-    // Get recent attendance
-    const recentAttendance = await AttendanceRecord.find({
-      organizationId: req.user.organizationId._id
-    })
-    .populate('meetingId', 'title')
-    .sort({ createdAt: -1 })
-    .limit(10)
-    .select('attendeeInfo.fullName verificationType status createdAt');
+    const [totalMeetings, activeMeetings, upcomingMeetings, totalAttendance, todayAttendance, byType, recentMeetings, recentAttendance] = stats;
     
-    res.json({
-      summary: {
-        totalMeetings,
-        activeMeetings,
-        upcomingMeetings,
-        totalAttendance,
-        todayAttendance
+    // Calculate growth metrics
+    const lastMonth = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
+    const lastMonthAttendance = await AttendanceRecord.countDocuments({
+      organizationId: req.user.organizationId._id,
+      createdAt: { 
+        $gte: lastMonth,
+        $lt: thirtyDaysAgo
       },
-      byType: attendanceByType,
-      recentAttendance
+      deletedAt: null
     });
     
+    const attendanceGrowth = lastMonthAttendance > 0 ? 
+      ((totalAttendance - lastMonthAttendance) / lastMonthAttendance * 100).toFixed(1) : 100;
+    
+    res.json({
+      success: true,
+      stats: {
+        overview: {
+          totalMeetings,
+          activeMeetings,
+          upcomingMeetings,
+          totalAttendance,
+          todayAttendance,
+          attendanceGrowth: parseFloat(attendanceGrowth)
+        },
+        byType: byType.reduce((acc, item) => {
+          acc[item._id] = item.count;
+          return acc;
+        }, {}),
+        recentMeetings,
+        recentAttendance
+      }
+    });
   } catch (error) {
     console.error('Dashboard stats error:', error);
-    res.status(500).json({ error: 'Failed to fetch dashboard stats' });
+    res.status(500).json({ 
+      error: 'Failed to fetch dashboard statistics',
+      code: 'DASHBOARD_STATS_FAILED'
+    });
   }
 });
 
-// 9. Audit Log Routes
-app.get('/api/audit-logs', authenticateToken, async (req, res) => {
+// ================= NOTIFICATION ROUTES =================
+
+/**
+ * @route GET /api/notifications
+ * @desc Get user notifications
+ * @access Private
+ */
+app.get('/api/notifications', authenticateToken, async (req, res) => {
   try {
-    const { startDate, endDate, action, userId } = req.query;
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 50;
-    const skip = (page - 1) * limit;
+    const { unreadOnly, page = 1, limit = 20 } = req.query;
     
     const query = {
+      userId: req.user._id,
       organizationId: req.user.organizationId._id
     };
     
-    if (startDate && endDate) {
-      query.timestamp = {
-        $gte: new Date(startDate),
-        $lte: new Date(endDate)
-      };
+    if (unreadOnly === 'true') {
+      query.read = false;
     }
     
-    if (action) query.action = action;
-    if (userId) query.userId = userId;
+    const skip = (parseInt(page) - 1) * parseInt(limit);
     
-    const logs = await AuditLog.find(query)
-      .populate('userId', 'fullName email')
-      .sort({ timestamp: -1 })
+    const notifications = await Notification.find(query)
+      .sort({ createdAt: -1 })
       .skip(skip)
-      .limit(limit);
+      .limit(parseInt(limit))
+      .lean();
     
-    const total = await AuditLog.countDocuments(query);
-    
-    res.json({
-      logs,
-      pagination: {
-        page,
-        limit,
-        total,
-        pages: Math.ceil(total / limit)
-      }
+    const total = await Notification.countDocuments(query);
+    const unreadCount = await Notification.countDocuments({
+      ...query,
+      read: false
     });
     
+    res.json({
+      success: true,
+      notifications,
+      unreadCount,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total,
+        pages: Math.ceil(total / parseInt(limit))
+      }
+    });
   } catch (error) {
-    console.error('Audit logs error:', error);
-    res.status(500).json({ error: 'Failed to fetch audit logs' });
+    console.error('Get notifications error:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch notifications',
+      code: 'NOTIFICATIONS_FETCH_FAILED'
+    });
   }
 });
 
-// Add these routes after line 1350
-
-// ================= PWA SUPPORT APIs =================
-
-// Get PWA manifest for meeting
-app.get('/api/meetings/:meetingId/manifest.json', async (req, res) => {
+/**
+ * @route PUT /api/notifications/:notificationId/read
+ * @desc Mark notification as read
+ * @access Private
+ */
+app.put('/api/notifications/:notificationId/read', authenticateToken, async (req, res) => {
   try {
-    const meeting = await Meeting.findById(req.params.meetingId)
-      .populate('organizationId', 'name');
+    const notification = await Notification.findOne({
+      _id: req.params.notificationId,
+      userId: req.user._id,
+      organizationId: req.user.organizationId._id
+    });
     
-    if (!meeting) {
-      return res.status(404).json({ error: 'Meeting not found' });
+    if (!notification) {
+      return res.status(404).json({ 
+        error: 'Notification not found',
+        code: 'NOTIFICATION_NOT_FOUND'
+      });
     }
     
-    // Check if PWA is enabled
-    if (meeting.pwaSettings?.enablePWA === false) {
-      return res.status(404).json({ error: 'PWA not enabled for this meeting' });
-    }
+    notification.read = true;
+    notification.readAt = new Date();
+    await notification.save();
     
-    const manifest = generatePWAManifest(meeting, meeting.organizationId);
-    
-    res.setHeader('Content-Type', 'application/manifest+json');
-    res.json(manifest);
-    
+    res.json({
+      success: true,
+      notification
+    });
   } catch (error) {
-    console.error('Manifest error:', error);
-    res.status(500).json({ error: 'Failed to generate manifest' });
+    console.error('Mark notification as read error:', error);
+    res.status(500).json({ 
+      error: 'Failed to mark notification as read',
+      code: 'NOTIFICATION_READ_FAILED'
+    });
   }
 });
 
-// Get service worker
-app.get('/api/pwa/service-worker.js', (req, res) => {
-  res.setHeader('Content-Type', 'application/javascript');
-  res.send(generateServiceWorker());
-});
-
-// Get PWA icons (placeholder - in production, serve actual icon files)
-app.get('/api/pwa/icons/:size', (req, res) => {
-  const sizes = {
-    '72': 72,
-    '96': 96,
-    '128': 128,
-    '144': 144,
-    '152': 152,
-    '192': 192,
-    '384': 384,
-    '512': 512
-  };
-  
-  const size = sizes[req.params.size];
-  if (!size) {
-    return res.status(404).json({ error: 'Invalid icon size' });
-  }
-  
-  // In production, you would serve actual icon files
-  // This is a placeholder response
-  res.json({
-    message: 'Icon placeholder',
-    size,
-    url: `https://via.placeholder.com/${size}x${size}/2196F3/FFFFFF?text=GSAMS`
-  });
-});
-
-// Register device for push notifications
-app.post('/api/pwa/register-device', async (req, res) => {
+/**
+ * @route PUT /api/notifications/read-all
+ * @desc Mark all notifications as read
+ * @access Private
+ */
+app.put('/api/notifications/read-all', authenticateToken, async (req, res) => {
   try {
-    const { meetingId, deviceId, pushSubscription, userAgent } = req.body;
-    
-    const meeting = await Meeting.findById(meetingId);
-    if (!meeting) {
-      return res.status(404).json({ error: 'Meeting not found' });
-    }
-    
-    // Store device registration (you might want to create a separate collection for this)
-    await DeviceFingerprint.findOneAndUpdate(
-      { deviceId, organizationId: meeting.organizationId },
+    await Notification.updateMany(
       {
-        $set: {
-          pushSubscription,
-          lastUsed: new Date(),
-          metadata: { userAgent }
+        userId: req.user._id,
+        organizationId: req.user.organizationId._id,
+        read: false
+      },
+      {
+        read: true,
+        readAt: new Date()
+      }
+    );
+    
+    res.json({
+      success: true,
+      message: 'All notifications marked as read'
+    });
+  } catch (error) {
+    console.error('Mark all notifications as read error:', error);
+    res.status(500).json({ 
+      error: 'Failed to mark all notifications as read',
+      code: 'NOTIFICATIONS_READ_ALL_FAILED'
+    });
+  }
+});
+
+// ================= HEALTH CHECK =================
+
+/**
+ * @route GET /api/health
+ * @desc Health check endpoint
+ * @access Public
+ */
+app.get('/api/health', async (req, res) => {
+  try {
+    const health = {
+      status: 'healthy',
+      timestamp: new Date(),
+      uptime: process.uptime(),
+      services: {
+        database: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
+        memory: {
+          rss: `${(process.memoryUsage().rss / 1024 / 1024).toFixed(2)} MB`,
+          heapTotal: `${(process.memoryUsage().heapTotal / 1024 / 1024).toFixed(2)} MB`,
+          heapUsed: `${(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2)} MB`
         }
       },
-      { upsert: true, new: true }
-    );
-    
-    res.json({
-      success: true,
-      message: 'Device registered for push notifications'
-    });
-    
-  } catch (error) {
-    console.error('Device registration error:', error);
-    res.status(500).json({ error: 'Failed to register device' });
-  }
-});
-
-// Send push notification (admin endpoint)
-app.post('/api/pwa/send-notification', authenticateToken, async (req, res) => {
-  try {
-    const { meetingId, title, message, type } = req.body;
-    
-    const meeting = await Meeting.findOne({
-      _id: meetingId,
-      organizationId: req.user.organizationId._id
-    });
-    
-    if (!meeting) {
-      return res.status(404).json({ error: 'Meeting not found' });
-    }
-    
-    // In a real implementation, you would:
-    // 1. Get all registered devices for this meeting
-    // 2. Send push notifications via Firebase Cloud Messaging or similar
-    // 3. Log the notification
-    
-    // For now, we'll just log it
-    await AuditLog.create({
-      organizationId: req.user.organizationId._id,
-      userId: req.user._id,
-      action: 'PWA_NOTIFICATION_SENT',
-      entityType: 'meeting',
-      entityId: meeting._id,
-      details: { title, message, type },
-      ipAddress: req.ip,
-      userAgent: req.get('User-Agent')
-    });
-    
-    res.json({
-      success: true,
-      message: 'Notification queued for sending'
-    });
-    
-  } catch (error) {
-    console.error('Send notification error:', error);
-    res.status(500).json({ error: 'Failed to send notification' });
-  }
-});
-
-// Add this route for pre-attendance location testing
-app.post('/api/location/test', async (req, res) => {
-  try {
-    const { meetingCode, latitude, longitude, accuracy } = req.body;
-    
-    if (!meetingCode || !latitude || !longitude) {
-      return res.status(400).json({ 
-        error: 'Missing required fields',
-        required: ['meetingCode', 'latitude', 'longitude']
-      });
-    }
-    
-    // Find meeting
-    const meeting = await Meeting.findOne({
-      'accessCodes.publicCode': meetingCode,
-      status: { $in: ['draft', 'active', 'in_progress'] }
-    });
-    
-    if (!meeting) {
-      return res.status(404).json({ 
-        error: 'Meeting not found',
-        suggestions: ['Check the meeting code', 'Contact the meeting organizer']
-      });
-    }
-    
-    // Test location validation
-    const locationValidation = validateLocation(
-      latitude,
-      longitude,
-      meeting.location.latitude,
-      meeting.location.longitude,
-      meeting.location.radius,
-      accuracy || 100 // Default accuracy if not provided
-    );
-    
-    // Detect potential spoofing
-    const spoofingDetection = detectLocationSpoofing({
-      latitude,
-      longitude,
-      accuracy: accuracy || 100
-    });
-    
-    // Calculate if location would be accepted
-    let wouldBeAccepted = false;
-    switch(meeting.attendanceConfig.verificationStrictness) {
-      case 'low':
-        wouldBeAccepted = locationValidation.checks.accuracyAdjustedCheck;
-        break;
-      case 'medium':
-        wouldBeAccepted = locationValidation.checks.basicRadiusCheck;
-        if (spoofingDetection.riskLevel === 'high') wouldBeAccepted = false;
-        break;
-      case 'high':
-        wouldBeAccepted = locationValidation.checks.strictCheck && 
-                          !spoofingDetection.isSuspicious &&
-                          locationValidation.checks.validCoordinates;
-        break;
-      default:
-        wouldBeAccepted = locationValidation.checks.basicRadiusCheck;
-    }
-    
-    res.json({
-      success: true,
-      meeting: {
-        title: meeting.title,
-        location: meeting.location.name,
-        address: meeting.location.address,
-        coordinates: {
-          latitude: meeting.location.latitude,
-          longitude: meeting.location.longitude
-        },
-        radius: meeting.location.radius,
-        strictness: meeting.attendanceConfig.verificationStrictness
-      },
-      yourLocation: {
-        latitude,
-        longitude,
-        accuracy: accuracy || 100
-      },
-      validation: {
-        wouldBeAccepted,
-        distance: locationValidation.distance,
-        withinRadius: locationValidation.isWithinRadius,
-        confidenceScore: locationValidation.confidenceScore,
-        checks: locationValidation.checks,
-        spoofingDetection,
-        messages: locationValidation.messages
-      },
-      recommendations: wouldBeAccepted ? 
-        ['Your location is acceptable for attendance'] :
-        [
-          'Move closer to the meeting venue',
-          'Enable high-accuracy GPS mode',
-          'Ensure location services are enabled',
-          'Contact organizer if you believe this is an error'
-        ]
-    });
-    
-  } catch (error) {
-    console.error('Location test error:', error);
-    res.status(500).json({ 
-      error: 'Location test failed',
-      details: 'Unable to verify location at this time'
-    });
-  }
-});
-
-// Add this route for real-time attendance monitoring
-
-// Get live attendance feed (SSE - Server-Sent Events)
-app.get('/api/meetings/:meetingId/live', authenticateToken, async (req, res) => {
-  try {
-    const meeting = await Meeting.findOne({
-      _id: req.params.meetingId,
-      organizationId: req.user.organizationId._id
-    });
-    
-    if (!meeting) {
-      return res.status(404).json({ error: 'Meeting not found' });
-    }
-    
-    // Set SSE headers
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    
-    // Send initial data
-    const initialData = {
-      type: 'INIT',
-      meeting: {
-        id: meeting._id,
-        title: meeting.title,
-        status: meeting.status
-      },
-      timestamp: new Date().toISOString()
+      version: '1.0.0'
     };
     
-    res.write(`data: ${JSON.stringify(initialData)}\n\n`);
-    
-    // Set up interval to send updates
-    const intervalId = setInterval(async () => {
-      try {
-        // Get latest attendance
-        const recentAttendance = await AttendanceRecord.find({
-          meetingId: meeting._id,
-          createdAt: { $gte: new Date(Date.now() - 5 * 60000) } // Last 5 minutes
-        })
-        .sort({ createdAt: -1 })
-        .limit(20)
-        .select('attendeeInfo.fullName verificationType status createdAt')
-        .lean();
-        
-        // Get statistics
-        const totalAttendees = await AttendanceRecord.countDocuments({
-          meetingId: meeting._id
-        });
-        
-        const activeAttendees = await AttendanceRecord.countDocuments({
-          meetingId: meeting._id,
-          status: { $in: ['pending', 'verified'] },
-          'timeTracking.checkOutTime': { $exists: false }
-        });
-        
-        const updateData = {
-          type: 'UPDATE',
-          recentAttendance,
-          statistics: {
-            totalAttendees,
-            activeAttendees,
-            timestamp: new Date().toISOString()
-          }
-        };
-        
-        res.write(`data: ${JSON.stringify(updateData)}\n\n`);
-      } catch (error) {
-        console.error('Live feed error:', error);
-      }
-    }, 10000); // Update every 10 seconds
-    
-    // Clean up on client disconnect
-    req.on('close', () => {
-      clearInterval(intervalId);
-      console.log('Client disconnected from live feed');
-    });
-    
+    res.json(health);
   } catch (error) {
-    console.error('Live feed setup error:', error);
-    if (!res.headersSent) {
-      res.status(500).json({ error: 'Failed to setup live feed' });
-    }
+    console.error('Health check error:', error);
+    res.status(500).json({ 
+      status: 'unhealthy',
+      error: error.message,
+      timestamp: new Date()
+    });
   }
 });
 
-// Add this helper function for geohash generation
-const generateGeohash = (latitude, longitude, precision = 9) => {
-  // Simple geohash implementation (in production, use a proper geohash library)
-  const base32 = '0123456789bcdefghjkmnpqrstuvwxyz';
-  let hash = '';
-  let bits = 0;
-  let bit = 0;
-  
-  let latMin = -90, latMax = 90;
-  let lonMin = -180, lonMax = 180;
-  
-  while (hash.length < precision) {
-    if (bits % 2 === 0) {
-      // Even bit: bisect longitude
-      const lonMid = (lonMin + lonMax) / 2;
-      if (longitude < lonMid) {
-        bit = bit << 1;
-        lonMax = lonMid;
-      } else {
-        bit = (bit << 1) | 1;
-        lonMin = lonMid;
-      }
-    } else {
-      // Odd bit: bisect latitude
-      const latMid = (latMin + latMax) / 2;
-      if (latitude < latMid) {
-        bit = bit << 1;
-        latMax = latMid;
-      } else {
-        bit = (bit << 1) | 1;
-        latMin = latMid;
-      }
-    }
-    
-    bits++;
-    
-    if (bits % 5 === 0) {
-      hash += base32[bit];
-      bit = 0;
-    }
-  }
-  
-  return hash;
-};
-
-// 10. Health Check
-app.get('/api/health', (req, res) => {
-  res.json({
-    status: 'healthy',
-    timestamp: new Date(),
-    services: {
-      database: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
-      // redis: redisClient.connected ? 'connected' : 'disconnected'
-    }
-  });
-});
-
-// Error handling middleware
-app.use((err, req, res, next) => {
-  console.error('Unhandled error:', err);
-  res.status(500).json({
-    error: 'Internal server error',
-    message: process.env.NODE_ENV === 'development' ? err.message : undefined
-  });
-});
+// ================= ERROR HANDLING =================
 
 // 404 handler
 app.use((req, res) => {
-  res.status(404).json({ error: 'Endpoint not found' });
+  res.status(404).json({ 
+    error: 'Endpoint not found',
+    code: 'ENDPOINT_NOT_FOUND'
+  });
 });
 
-// Start server
+// Global error handler
+app.use((err, req, res, next) => {
+  console.error('Unhandled error:', err);
+  
+  // Default error
+  const status = err.status || 500;
+  const message = err.message || 'Internal server error';
+  const code = err.code || 'INTERNAL_SERVER_ERROR';
+  
+  res.status(status).json({
+    error: message,
+    code,
+    timestamp: new Date(),
+    ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
+  });
+});
+
+// ================= SERVER START =================
+
 const startServer = async () => {
   try {
-    // await redisClient.connect();
-    
-    app.listen(PORT, () => {
-      console.log(`GSAMS Backend running on port ${PORT}`);
-      console.log(`Health check: http://localhost:${PORT}/api/health`);
+    server.listen(PORT, () => {
+      console.log(`✅ GSAMS Backend running on port ${PORT}`);
+      console.log(`✅ Health check: http://localhost:${PORT}/api/health`);
+      console.log(`✅ MongoDB: ${mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected'}`);
     });
   } catch (error) {
-    console.error('Failed to start server:', error);
+    console.error('❌ Failed to start server:', error);
     process.exit(1);
   }
 };
 
+// Handle graceful shutdown
+process.on('SIGTERM', async () => {
+  console.log('SIGTERM received. Shutting down gracefully...');
+  
+  // Close MongoDB connection
+  await mongoose.connection.close();
+  
+  // Close server
+  server.close(() => {
+    console.log('Server closed');
+    process.exit(0);
+  });
+});
+
+process.on('SIGINT', async () => {
+  console.log('SIGINT received. Shutting down gracefully...');
+  
+  // Close MongoDB connection
+  await mongoose.connection.close();
+  
+  // Close server
+  server.close(() => {
+    console.log('Server closed');
+    process.exit(0);
+  });
+});
+
+// Start the server
 startServer();
 
 // Export for testing
