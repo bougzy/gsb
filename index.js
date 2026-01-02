@@ -1185,20 +1185,30 @@ const isSuperAdmin = (req, res, next) => {
 // ================= NEW MEETING APIs =================
 
 // DELETE Meeting
+
+// Enhanced DELETE Meeting endpoint - REPLACE THE EXISTING ONE
 app.delete('/api/meetings/:meetingId', authenticateToken, async (req, res) => {
   try {
+    console.log('DELETE meeting request:', req.params.meetingId, 'by user:', req.user._id);
+    
     const meeting = await Meeting.findOne({
       _id: req.params.meetingId,
       organizationId: req.user.organizationId._id
     });
     
     if (!meeting) {
-      return res.status(404).json({ error: 'Meeting not found' });
+      return res.status(404).json({ 
+        error: 'Meeting not found',
+        message: 'The meeting you are trying to delete does not exist or you do not have permission to delete it.'
+      });
     }
     
     // Check permissions
     if (!req.user.permissions.canDeleteMeetings && req.user.role !== 'super_admin') {
-      return res.status(403).json({ error: 'Permission denied to delete meetings' });
+      return res.status(403).json({ 
+        error: 'Permission denied',
+        message: 'You do not have permission to delete meetings. Contact your administrator.'
+      });
     }
     
     // Check if meeting has attendance records
@@ -1206,23 +1216,37 @@ app.delete('/api/meetings/:meetingId', authenticateToken, async (req, res) => {
       meetingId: meeting._id
     });
     
-    if (attendanceCount > 0 && req.body.force !== 'true') {
+    // Parse query parameters for force delete
+    const forceDelete = req.query.force === 'true';
+    const hardDelete = req.query.hardDelete === 'true';
+    const deleteAttendance = req.query.deleteAttendance === 'true';
+    
+    if (attendanceCount > 0 && !forceDelete) {
       return res.status(400).json({
-        error: 'Meeting has attendance records. Use force=true to delete anyway.',
-        attendanceCount
+        error: 'Meeting has attendance records',
+        message: 'Cannot delete meeting with attendance records. Use force=true parameter to delete anyway.',
+        attendanceCount,
+        suggestions: [
+          'Cancel the meeting instead of deleting it',
+          'Use ?force=true to delete with records',
+          'Use ?hardDelete=true&deleteAttendance=true to permanently delete everything'
+        ]
       });
     }
     
-    // Soft delete (mark as cancelled) or hard delete based on parameter
-    if (req.body.hardDelete === 'true') {
+    let action = 'MEETING_CANCELLED';
+    
+    if (hardDelete) {
+      // Hard delete - permanently remove from database
       await Meeting.deleteOne({ _id: meeting._id });
       
       // Also delete related attendance records if specified
-      if (req.body.deleteAttendance === 'true') {
+      if (deleteAttendance) {
         await AttendanceRecord.deleteMany({ meetingId: meeting._id });
         await SMSLog.deleteMany({ meetingId: meeting._id });
         await USSDSession.deleteMany({ meetingId: meeting._id });
       }
+      action = 'MEETING_HARD_DELETED';
     } else {
       // Soft delete - mark as cancelled
       meeting.status = 'cancelled';
@@ -1230,33 +1254,54 @@ app.delete('/api/meetings/:meetingId', authenticateToken, async (req, res) => {
       await meeting.save();
     }
     
+    // Create audit log
     await AuditLog.create({
       organizationId: req.user.organizationId._id,
       userId: req.user._id,
-      action: req.body.hardDelete === 'true' ? 'MEETING_HARD_DELETED' : 'MEETING_CANCELLED',
+      action: action,
       entityType: 'meeting',
       entityId: meeting._id,
       details: {
         title: meeting.title,
-        hardDelete: req.body.hardDelete === 'true',
-        deleteAttendance: req.body.deleteAttendance === 'true',
-        attendanceCount
+        hardDelete: hardDelete,
+        deleteAttendance: deleteAttendance,
+        attendanceCount: attendanceCount,
+        forceDelete: forceDelete
       },
       ipAddress: req.ip,
       userAgent: req.get('User-Agent')
     });
     
+    console.log('Meeting deleted successfully:', meeting._id);
+    
     res.json({
       success: true,
-      message: req.body.hardDelete === 'true' ? 'Meeting permanently deleted' : 'Meeting cancelled',
-      meetingId: meeting._id
+      message: hardDelete ? 'Meeting permanently deleted' : 'Meeting cancelled',
+      meetingId: meeting._id,
+      meetingTitle: meeting.title,
+      action: hardDelete ? 'deleted' : 'cancelled',
+      timestamp: new Date().toISOString()
     });
     
   } catch (error) {
     console.error('Delete meeting error:', error);
-    res.status(500).json({ error: 'Failed to delete meeting' });
+    
+    // Handle specific MongoDB errors
+    if (error.name === 'CastError') {
+      return res.status(400).json({ 
+        error: 'Invalid meeting ID',
+        message: 'The provided meeting ID is not valid.'
+      });
+    }
+    
+    res.status(500).json({ 
+      error: 'Failed to delete meeting',
+      message: 'An unexpected error occurred. Please try again.',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 });
+
 
 // Get meeting with enhanced details including links
 app.get('/api/meetings/:meetingId/details', authenticateToken, async (req, res) => {
