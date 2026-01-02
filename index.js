@@ -1456,6 +1456,415 @@ app.post('/api/meetings/:meetingId/location', authenticateToken, async (req, res
   }
 });
 
+
+// ================= ENHANCED MEETING MANAGEMENT APIs =================
+
+// Get meeting details with enhanced information (including form validation)
+app.get('/api/meetings/:meetingId/full', authenticateToken, async (req, res) => {
+  try {
+    const meeting = await Meeting.findOne({
+      _id: req.params.meetingId,
+      organizationId: req.user.organizationId._id
+    })
+    .populate('createdBy', 'fullName email')
+    .lean();
+
+    if (!meeting) {
+      return res.status(404).json({ error: 'Meeting not found' });
+    }
+
+    // Get attendance count
+    const attendanceCount = await AttendanceRecord.countDocuments({
+      meetingId: meeting._id
+    });
+
+    // Generate QR code
+    const qrCode = await generateMeetingQRCode(meeting.accessCodes.publicCode);
+
+    // Generate meeting links
+    const links = generateMeetingLinks(meeting._id, meeting.accessCodes.publicCode);
+
+    // Check if all required sections are filled
+    const validationStatus = validateMeetingCompletion(meeting);
+
+    res.json({
+      ...meeting,
+      qrCode,
+      links,
+      attendanceCount,
+      validationStatus,
+      canBeActivated: validationStatus.allSectionsComplete
+    });
+
+  } catch (error) {
+    console.error('Get full meeting error:', error);
+    res.status(500).json({ error: 'Failed to fetch meeting details' });
+  }
+});
+
+// Validate meeting completion
+const validateMeetingCompletion = (meeting) => {
+  const validation = {
+    allSectionsComplete: false,
+    sections: {
+      meetingDetails: false,
+      attendanceForm: false,
+      shareQRCode: false,
+      advancedSettings: false
+    },
+    messages: []
+  };
+
+  // 1. Check Meeting Details
+  if (meeting.title && 
+      meeting.location.name && 
+      meeting.location.latitude && 
+      meeting.location.longitude &&
+      meeting.schedule.startTime &&
+      meeting.schedule.endTime) {
+    validation.sections.meetingDetails = true;
+  } else {
+    validation.messages.push('Meeting details incomplete: Title, location, and schedule are required');
+  }
+
+  // 2. Check Attendance Form (if required fields are configured)
+  const hasRequiredFields = meeting.attendanceConfig?.requiredFields?.length > 0 ||
+                           meeting.customFormFields?.length > 0;
+  validation.sections.attendanceForm = hasRequiredFields;
+  if (!hasRequiredFields) {
+    validation.messages.push('Attendance form incomplete: Configure at least one required field');
+  }
+
+  // 3. Check Share & QR Code (access codes should be generated)
+  validation.sections.shareQRCode = meeting.accessCodes?.publicCode && 
+                                    meeting.accessCodes?.smsCode && 
+                                    meeting.accessCodes?.ussdCode;
+  if (!validation.sections.shareQRCode) {
+    validation.messages.push('Share & QR Code section incomplete: Generate access codes');
+  }
+
+  // 4. Check Advanced Settings (at least one attendance method enabled)
+  const attendanceMethods = meeting.attendanceConfig?.allowedModes;
+  const hasEnabledMethods = attendanceMethods && (
+    attendanceMethods.smartphoneGPS ||
+    attendanceMethods.sms ||
+    attendanceMethods.ussd ||
+    attendanceMethods.kiosk ||
+    attendanceMethods.manual
+  );
+  validation.sections.advancedSettings = hasEnabledMethods;
+  if (!hasEnabledMethods) {
+    validation.messages.push('Advanced settings incomplete: Enable at least one attendance method');
+  }
+
+  // Check if all sections are complete
+  validation.allSectionsComplete = Object.values(validation.sections).every(section => section === true);
+
+  return validation;
+};
+
+// Activate meeting and generate share links
+app.post('/api/meetings/:meetingId/activate', authenticateToken, async (req, res) => {
+  try {
+    const meeting = await Meeting.findOne({
+      _id: req.params.meetingId,
+      organizationId: req.user.organizationId._id,
+      status: 'draft'
+    });
+
+    if (!meeting) {
+      return res.status(404).json({ 
+        error: 'Meeting not found or not in draft status' 
+      });
+    }
+
+    // Validate all sections are complete
+    const validationStatus = validateMeetingCompletion(meeting);
+    if (!validationStatus.allSectionsComplete) {
+      return res.status(400).json({
+        error: 'Meeting cannot be activated',
+        details: 'Please complete all sections before activating',
+        validationStatus
+      });
+    }
+
+    // Generate meeting links if not already generated
+    if (!meeting.shareLinks) {
+      const links = generateMeetingLinks(meeting._id, meeting.accessCodes.publicCode);
+      meeting.shareLinks = links;
+    }
+
+    // Update meeting status to active
+    meeting.status = 'active';
+    meeting.updatedAt = new Date();
+    await meeting.save();
+
+    // Generate QR code
+    const qrCode = await generateMeetingQRCode(meeting.accessCodes.publicCode);
+
+    // Generate success modal data
+    const modalData = {
+      meetingId: meeting._id,
+      title: meeting.title,
+      shareLinks: meeting.shareLinks,
+      qrCode,
+      accessCodes: {
+        publicCode: meeting.accessCodes.publicCode,
+        smsCode: meeting.accessCodes.smsCode,
+        ussdCode: meeting.accessCodes.ussdCode
+      },
+      timestamp: new Date().toISOString()
+    };
+
+    await AuditLog.create({
+      organizationId: req.user.organizationId._id,
+      userId: req.user._id,
+      action: 'MEETING_ACTIVATED',
+      entityType: 'meeting',
+      entityId: meeting._id,
+      details: {
+        title: meeting.title,
+        validationStatus
+      },
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent')
+    });
+
+    res.json({
+      success: true,
+      message: 'Meeting activated successfully',
+      meeting: {
+        id: meeting._id,
+        title: meeting.title,
+        status: meeting.status
+      },
+      modalData,
+      validationStatus
+    });
+
+  } catch (error) {
+    console.error('Activate meeting error:', error);
+    res.status(500).json({ error: 'Failed to activate meeting' });
+  }
+});
+
+// Update meeting section by section
+app.patch('/api/meetings/:meetingId/sections/:section', authenticateToken, async (req, res) => {
+  try {
+    const { meetingId, section } = req.params;
+    const data = req.body;
+
+    const meeting = await Meeting.findOne({
+      _id: meetingId,
+      organizationId: req.user.organizationId._id
+    });
+
+    if (!meeting) {
+      return res.status(404).json({ error: 'Meeting not found' });
+    }
+
+    let updateData = {};
+    let validationResult = { isValid: true, message: '' };
+
+    switch (section) {
+      case 'details':
+        updateData = {
+          title: data.title,
+          description: data.description,
+          location: data.location,
+          schedule: data.schedule
+        };
+        validationResult = validateMeetingDetails(data);
+        break;
+
+      case 'attendance-form':
+        updateData = {
+          attendanceConfig: {
+            ...meeting.attendanceConfig,
+            requiredFields: data.requiredFields || []
+          },
+          customFormFields: data.customFormFields || []
+        };
+        validationResult = validateAttendanceForm(data);
+        break;
+
+      case 'share-qrcode':
+        // Generate access codes if not already generated
+        if (!meeting.accessCodes?.publicCode) {
+          updateData.accessCodes = {
+            publicCode: generateAccessCode(),
+            smsCode: `MTG-${generateAccessCode().slice(0, 4)}`,
+            ussdCode: generateAccessCode().slice(0, 6)
+          };
+        }
+        break;
+
+      case 'advanced-settings':
+        updateData = {
+          attendanceConfig: {
+            ...meeting.attendanceConfig,
+            allowedModes: data.allowedModes,
+            verificationStrictness: data.verificationStrictness,
+            duplicatePrevention: data.duplicatePrevention
+          },
+          timeVerification: data.timeVerification,
+          pwaSettings: data.pwaSettings
+        };
+        validationResult = validateAdvancedSettings(data);
+        break;
+
+      default:
+        return res.status(400).json({ error: 'Invalid section' });
+    }
+
+    if (!validationResult.isValid) {
+      return res.status(400).json({
+        error: 'Validation failed',
+        details: validationResult.message
+      });
+    }
+
+    // Apply updates
+    Object.keys(updateData).forEach(key => {
+      if (updateData[key] !== undefined) {
+        meeting[key] = updateData[key];
+      }
+    });
+
+    meeting.updatedAt = new Date();
+    await meeting.save();
+
+    // Check current completion status
+    const validationStatus = validateMeetingCompletion(meeting);
+
+    res.json({
+      success: true,
+      message: `${section} updated successfully`,
+      validationStatus,
+      canBeActivated: validationStatus.allSectionsComplete,
+      meeting: {
+        id: meeting._id,
+        title: meeting.title,
+        status: meeting.status
+      }
+    });
+
+  } catch (error) {
+    console.error('Update meeting section error:', error);
+    res.status(500).json({ error: 'Failed to update meeting section' });
+  }
+});
+
+// Validation functions
+const validateMeetingDetails = (data) => {
+  if (!data.title || !data.title.trim()) {
+    return { isValid: false, message: 'Meeting title is required' };
+  }
+  if (!data.location?.name || !data.location?.latitude || !data.location?.longitude) {
+    return { isValid: false, message: 'Location details are required' };
+  }
+  if (!data.schedule?.startTime || !data.schedule?.endTime) {
+    return { isValid: false, message: 'Schedule times are required' };
+  }
+  if (new Date(data.schedule.startTime) >= new Date(data.schedule.endTime)) {
+    return { isValid: false, message: 'End time must be after start time' };
+  }
+  return { isValid: true, message: 'Meeting details are valid' };
+};
+
+const validateAttendanceForm = (data) => {
+  const hasRequiredFields = (data.requiredFields && data.requiredFields.length > 0) ||
+                           (data.customFormFields && data.customFormFields.length > 0);
+  
+  if (!hasRequiredFields) {
+    return { 
+      isValid: false, 
+      message: 'At least one field must be configured in the attendance form' 
+    };
+  }
+  return { isValid: true, message: 'Attendance form is valid' };
+};
+
+const validateAdvancedSettings = (data) => {
+  const hasEnabledMethods = data.allowedModes && (
+    data.allowedModes.smartphoneGPS ||
+    data.allowedModes.sms ||
+    data.allowedModes.ussd ||
+    data.allowedModes.kiosk ||
+    data.allowedModes.manual
+  );
+  
+  if (!hasEnabledMethods) {
+    return { 
+      isValid: false, 
+      message: 'At least one attendance method must be enabled' 
+    };
+  }
+  return { isValid: true, message: 'Advanced settings are valid' };
+};
+
+// Get all meetings with enhanced details for the meetings table
+app.get('/api/organization/meetings/enhanced', authenticateToken, async (req, res) => {
+  try {
+    const { status, startDate, endDate, page = 1, limit = 10 } = req.query;
+    
+    const query = {
+      organizationId: req.user.organizationId._id
+    };
+    
+    if (status) query.status = status;
+    if (startDate && endDate) {
+      query['schedule.startTime'] = {
+        $gte: new Date(startDate),
+        $lte: new Date(endDate)
+      };
+    }
+    
+    const skip = (page - 1) * limit;
+    
+    const meetings = await Meeting.find(query)
+      .populate('createdBy', 'fullName email')
+      .sort({ 'schedule.startTime': -1 })
+      .skip(skip)
+      .limit(parseInt(limit))
+      .lean();
+    
+    // Get attendance counts and validation status for each meeting
+    const enhancedMeetings = await Promise.all(meetings.map(async (meeting) => {
+      const attendanceCount = await AttendanceRecord.countDocuments({
+        meetingId: meeting._id
+      });
+      
+      const validationStatus = validateMeetingCompletion(meeting);
+      
+      return {
+        ...meeting,
+        attendanceCount,
+        validationStatus,
+        canBeEdited: meeting.status === 'draft' || meeting.status === 'active',
+        canBeDeleted: meeting.status === 'draft' || attendanceCount === 0
+      };
+    }));
+    
+    const total = await Meeting.countDocuments(query);
+    
+    res.json({
+      meetings: enhancedMeetings,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total,
+        pages: Math.ceil(total / limit)
+      }
+    });
+    
+  } catch (error) {
+    console.error('Get enhanced meetings error:', error);
+    res.status(500).json({ error: 'Failed to fetch meetings' });
+  }
+});
+
+
 // Update meeting with custom form
 app.put('/api/meetings/:meetingId/form', authenticateToken, async (req, res) => {
   try {
