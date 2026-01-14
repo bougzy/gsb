@@ -49,8 +49,6 @@ const corsOptions = {
     const allowedOrigins = [
       'http://localhost:3000',
       'http://localhost:5000',
-      'http://localhost:5173',
-      'https://yourfrontenddomain.com',
       'https://gsf-inky.vercel.app',
     ];
 
@@ -687,15 +685,235 @@ const generateAttendancePDF = async (meeting, records, organization) => {
 // Add these helper functions after line 353 (after generateAttendanceExcel function)
 
 // Generate meeting links
+// const generateMeetingLinks = (meetingId, publicCode) => {
+//   const baseUrl = process.env.FRONTEND_URL || 'https://gsf-inky.vercel.app';
+//   return {
+//     adminDashboard: `${baseUrl}/admin/meetings/${meetingId}`,
+//     attendeeForm: `${baseUrl}/attend/${publicCode}`,
+//     qrCodeUrl: `${baseUrl}/api/meetings/${meetingId}/qrcode`,
+//     publicAttendanceLink: `${baseUrl}/attend/${publicCode}/form`
+//   };
+// };
+
+
+// Generate meeting links
 const generateMeetingLinks = (meetingId, publicCode) => {
   const baseUrl = process.env.FRONTEND_URL || 'https://gsf-inky.vercel.app';
   return {
     adminDashboard: `${baseUrl}/admin/meetings/${meetingId}`,
     attendeeForm: `${baseUrl}/attend/${publicCode}`,
     qrCodeUrl: `${baseUrl}/api/meetings/${meetingId}/qrcode`,
-    publicAttendanceLink: `${baseUrl}/attend/${publicCode}/form`
+    publicAttendanceLink: `${baseUrl}/attend/${publicCode}/form`,
+    directQRCodeLink: `${baseUrl}/api/meetings/${meetingId}/qr-code`
   };
 };
+
+
+app.post('/api/meetings', authenticateToken, async (req, res) => {
+    try {
+        const {
+            title,
+            description,
+            location,
+            schedule,
+            attendanceConfig,
+            customFormFields,
+            timeVerification,
+            pwaSettings
+        } = req.body;
+
+        // Validate location data
+        if (!location || !location.latitude || !location.longitude) {
+            return res.status(400).json({
+                error: 'Meeting location is required',
+                details: 'Please provide latitude and longitude for the meeting venue'
+            });
+        }
+
+        // Validate coordinates
+        if (location.latitude < -90 || location.latitude > 90 || 
+            location.longitude < -180 || location.longitude > 180) {
+            return res.status(400).json({
+                error: 'Invalid coordinates',
+                details: 'Latitude must be between -90 and 90, Longitude between -180 and 180'
+            });
+        }
+
+        // Validate radius
+        const radius = location.radius || req.user.organizationId.settings.defaultLocationRadius;
+        if (radius < 10 || radius > 10000) {
+            return res.status(400).json({
+                error: 'Invalid radius',
+                details: 'Radius must be between 10 and 10,000 meters',
+                recommended: req.user.organizationId.settings.defaultLocationRadius
+            });
+        }
+
+        // Generate unique codes
+        const publicCode = generateAccessCode();
+        const smsCode = `MTG-${generateAccessCode().slice(0, 4)}`;
+        const ussdCode = generateAccessCode().slice(0, 6);
+
+        // Create meeting with all data
+        const meeting = await Meeting.create({
+            organizationId: req.user.organizationId._id,
+            createdBy: req.user._id,
+            title,
+            description: description || '',
+            location: {
+                name: location.name || 'Meeting Location',
+                latitude: location.latitude,
+                longitude: location.longitude,
+                address: location.address || '',
+                radius: radius
+            },
+            schedule: {
+                startTime: schedule.startTime,
+                endTime: schedule.endTime,
+                attendanceStart: schedule.attendanceStart || 
+                    new Date(new Date(schedule.startTime).getTime() - (schedule.bufferBefore || 30) * 60000),
+                attendanceEnd: schedule.attendanceEnd || 
+                    new Date(new Date(schedule.endTime).getTime() + (schedule.bufferAfter || 30) * 60000),
+                bufferBefore: schedule.bufferBefore || 30,
+                bufferAfter: schedule.bufferAfter || 30
+            },
+            attendanceConfig: attendanceConfig || {
+                allowedModes: {
+                    smartphoneGPS: req.user.organizationId.settings?.allowGPS !== false,
+                    sms: req.user.organizationId.settings?.allowSMS !== false,
+                    ussd: req.user.organizationId.settings?.allowUSSD !== false,
+                    kiosk: req.user.organizationId.settings?.allowKiosk !== false,
+                    manual: req.user.organizationId.settings?.allowManual !== false
+                },
+                requiredFields: [{ field: 'fullName', isRequired: true }],
+                verificationStrictness: 'medium',
+                duplicatePrevention: {
+                    preventSameDevice: true,
+                    preventSamePhone: true,
+                    preventSameNameTime: true,
+                    timeWindowMinutes: 5
+                },
+                timeRequirement: {
+                    minimumMinutes: 15,
+                    enableTimeTrack: false,
+                    maxAbsenceMinutes: 5
+                }
+            },
+            customFormFields: customFormFields || [],
+            timeVerification: timeVerification || {
+                requireMinimumStay: false,
+                minimumStayMinutes: 5,
+                enableContinuousMonitoring: false,
+                monitoringInterval: 5,
+                maxAllowedAbsence: 2,
+                autoVerifyAfterStay: false,
+                autoVerifyMinutes: 10
+            },
+            pwaSettings: pwaSettings || {
+                enablePWA: true,
+                appName: 'GSAMS Attendance',
+                themeColor: '#2196F3',
+                backgroundColor: '#ffffff'
+            },
+            accessCodes: {
+                publicCode,
+                smsCode,
+                ussdCode
+            },
+            status: 'draft'
+        });
+
+        // Generate QR code
+        const qrCode = await generateMeetingQRCode(publicCode);
+        
+        // Generate meeting links
+        const meetingLinks = generateMeetingLinks(meeting._id, publicCode);
+        
+        // Update meeting with links
+        meeting.shareLinks = meetingLinks;
+        await meeting.save();
+
+        await AuditLog.create({
+            organizationId: req.user.organizationId._id,
+            userId: req.user._id,
+            action: 'MEETING_CREATED',
+            entityType: 'meeting',
+            entityId: meeting._id,
+            details: { title, publicCode },
+            ipAddress: req.ip,
+            userAgent: req.get('User-Agent')
+        });
+
+        // Return complete meeting data with QR code and links
+        res.status(201).json({
+            ...meeting.toObject(),
+            qrCode,
+            links: meetingLinks,
+            success: true,
+            message: 'Meeting created successfully'
+        });
+        
+    } catch (error) {
+        console.error('Create meeting error:', error);
+        
+        // Provide specific error messages
+        if (error.name === 'ValidationError') {
+            return res.status(400).json({
+                error: 'Validation error',
+                details: Object.values(error.errors).map(err => err.message).join(', ')
+            });
+        }
+        
+        if (error.code === 11000) {
+            return res.status(400).json({
+                error: 'Duplicate meeting',
+                details: 'A meeting with similar details already exists'
+            });
+        }
+        
+        res.status(500).json({ 
+            error: 'Failed to create meeting',
+            details: 'Please try again or contact support'
+        });
+    }
+});
+
+
+
+
+// Get QR code for meeting (image download)
+app.get('/api/meetings/:meetingId/qr-code', authenticateToken, async (req, res) => {
+  try {
+    const meeting = await Meeting.findOne({
+      _id: req.params.meetingId,
+      organizationId: req.user.organizationId._id
+    });
+
+    if (!meeting) {
+      return res.status(404).json({ error: 'Meeting not found' });
+    }
+
+    const qrCode = await generateMeetingQRCode(meeting.accessCodes.publicCode);
+    
+    if (!qrCode) {
+      return res.status(500).json({ error: 'Failed to generate QR code' });
+    }
+
+    // Remove the data URL prefix
+    const base64Data = qrCode.replace(/^data:image\/png;base64,/, '');
+    const imgBuffer = Buffer.from(base64Data, 'base64');
+
+    res.setHeader('Content-Type', 'image/png');
+    res.setHeader('Content-Disposition', `attachment; filename="qr-code-${meeting.title.replace(/[^a-z0-9]/gi, '-').toLowerCase()}.png"`);
+    res.send(imgBuffer);
+
+  } catch (error) {
+    console.error('QR code endpoint error:', error);
+    res.status(500).json({ error: 'Failed to generate QR code' });
+  }
+});
+
+
 
 // Generate PWA manifest
 const generatePWAManifest = (meeting, organization) => {
@@ -1386,6 +1604,37 @@ app.get('/api/meetings/:meetingId/details', authenticateToken, async (req, res) 
   }
 });
 
+// Get QR code for meeting
+app.get('/api/meetings/:meetingId/qr-code', authenticateToken, async (req, res) => {
+    try {
+        const meeting = await Meeting.findOne({
+            _id: req.params.meetingId,
+            organizationId: req.user.organizationId._id
+        });
+
+        if (!meeting) {
+            return res.status(404).json({ error: 'Meeting not found' });
+        }
+
+        const qrCode = await generateMeetingQRCode(meeting.accessCodes.publicCode);
+        
+        if (!qrCode) {
+            return res.status(500).json({ error: 'Failed to generate QR code' });
+        }
+
+        // Remove the data URL prefix
+        const base64Data = qrCode.replace(/^data:image\/png;base64,/, '');
+        const imgBuffer = Buffer.from(base64Data, 'base64');
+
+        res.setHeader('Content-Type', 'image/png');
+        res.setHeader('Content-Disposition', `attachment; filename="qr-code-${meeting.title}.png"`);
+        res.send(imgBuffer);
+
+    } catch (error) {
+        console.error('QR code endpoint error:', error);
+        res.status(500).json({ error: 'Failed to generate QR code' });
+    }
+});
 
 // Enhanced API for setting/updating meeting location with validation
 app.post('/api/meetings/:meetingId/location', authenticateToken, async (req, res) => {
@@ -1908,6 +2157,10 @@ app.get('/api/organization/meetings/enhanced', authenticateToken, async (req, re
     res.status(500).json({ error: 'Failed to fetch meetings' });
   }
 });
+
+
+
+
 
 
 // Update meeting with custom form
