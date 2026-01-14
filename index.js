@@ -1582,6 +1582,7 @@ app.put('/api/organization/settings', authenticateToken, isSuperAdmin, async (re
 });
 
 // 3. Meeting Routes
+// 3. Meeting Routes
 app.post('/api/meetings', authenticateToken, async (req, res) => {
   try {
     const {
@@ -1595,67 +1596,334 @@ app.post('/api/meetings', authenticateToken, async (req, res) => {
       pwaSettings
     } = req.body;
 
-    console.log('Creating meeting for user:', req.user._id);
-    console.log('Meeting data:', { title, location, schedule });
+    console.log('=== MEETING CREATION REQUEST ===');
+    console.log('User ID:', req.user?._id);
+    console.log('Organization ID:', req.user?.organizationId?._id);
+    console.log('Request body:', JSON.stringify(req.body, null, 2));
 
-    // Basic validation
-    if (!title || !title.trim()) {
+    // Detailed validation logging
+    console.log('Validation check:', {
+      titleExists: !!title,
+      titleValid: title && typeof title === 'string' && title.trim().length > 0,
+      locationExists: !!location,
+      locationNameValid: location && location.name && location.name.trim().length > 0,
+      locationLatValid: location && location.latitude !== undefined,
+      locationLngValid: location && location.longitude !== undefined,
+      scheduleExists: !!schedule,
+      scheduleStartValid: schedule && schedule.startTime,
+      scheduleEndValid: schedule && schedule.endTime,
+      scheduleTimesValid: schedule && schedule.startTime && schedule.endTime && 
+                         new Date(schedule.startTime).getTime() < new Date(schedule.endTime).getTime()
+    });
+
+    // ============= VALIDATION SECTION =============
+    
+    // 1. Validate title
+    if (!title || typeof title !== 'string') {
       return res.status(400).json({ 
+        success: false,
         error: 'Meeting title is required',
-        details: 'Please provide a meeting title'
+        details: 'Please provide a meeting title',
+        field: 'title',
+        validation: 'required'
       });
     }
 
-    if (!location || !location.name || !location.latitude || !location.longitude) {
+    const trimmedTitle = title.trim();
+    if (trimmedTitle.length === 0) {
       return res.status(400).json({ 
-        error: 'Location data is incomplete',
-        details: 'Please provide location name, latitude, and longitude'
+        success: false,
+        error: 'Meeting title cannot be empty',
+        details: 'Please enter a valid meeting title',
+        field: 'title',
+        validation: 'non-empty'
       });
     }
 
-    if (!schedule || !schedule.startTime || !schedule.endTime) {
+    if (trimmedTitle.length > 200) {
       return res.status(400).json({ 
-        error: 'Schedule data is incomplete',
-        details: 'Please provide start and end times'
+        success: false,
+        error: 'Meeting title is too long',
+        details: 'Title must be less than 200 characters',
+        field: 'title',
+        validation: 'max-length'
       });
     }
 
-    // Validate date times
+    // 2. Validate location
+    if (!location || typeof location !== 'object') {
+      return res.status(400).json({ 
+        success: false,
+        error: 'Location data is required',
+        details: 'Please provide location information',
+        field: 'location',
+        validation: 'required'
+      });
+    }
+
+    // Validate location name
+    if (!location.name || typeof location.name !== 'string') {
+      return res.status(400).json({ 
+        success: false,
+        error: 'Location name is required',
+        details: 'Please provide a location name',
+        field: 'location.name',
+        validation: 'required'
+      });
+    }
+
+    const trimmedLocationName = location.name.trim();
+    if (trimmedLocationName.length === 0) {
+      return res.status(400).json({ 
+        success: false,
+        error: 'Location name cannot be empty',
+        details: 'Please enter a valid location name',
+        field: 'location.name',
+        validation: 'non-empty'
+      });
+    }
+
+    // Validate coordinates
+    if (location.latitude === undefined || location.longitude === undefined) {
+      return res.status(400).json({ 
+        success: false,
+        error: 'Location coordinates are required',
+        details: 'Please provide both latitude and longitude',
+        fields: ['location.latitude', 'location.longitude'],
+        validation: 'required'
+      });
+    }
+
+    const latitude = parseFloat(location.latitude);
+    const longitude = parseFloat(location.longitude);
+
+    if (isNaN(latitude) || isNaN(longitude)) {
+      return res.status(400).json({ 
+        success: false,
+        error: 'Invalid coordinates',
+        details: 'Latitude and longitude must be valid numbers',
+        fields: ['location.latitude', 'location.longitude'],
+        validation: 'numeric'
+      });
+    }
+
+    if (latitude < -90 || latitude > 90) {
+      return res.status(400).json({ 
+        success: false,
+        error: 'Invalid latitude',
+        details: 'Latitude must be between -90 and 90 degrees',
+        field: 'location.latitude',
+        validation: 'range',
+        min: -90,
+        max: 90
+      });
+    }
+
+    if (longitude < -180 || longitude > 180) {
+      return res.status(400).json({ 
+        success: false,
+        error: 'Invalid longitude',
+        details: 'Longitude must be between -180 and 180 degrees',
+        field: 'location.longitude',
+        validation: 'range',
+        min: -180,
+        max: 180
+      });
+    }
+
+    // Validate radius
+    const radius = location.radius ? parseInt(location.radius) : 100;
+    if (isNaN(radius) || radius < 10 || radius > 10000) {
+      return res.status(400).json({ 
+        success: false,
+        error: 'Invalid location radius',
+        details: 'Radius must be between 10 and 10,000 meters',
+        field: 'location.radius',
+        validation: 'range',
+        min: 10,
+        max: 10000
+      });
+    }
+
+    // 3. Validate schedule
+    if (!schedule || typeof schedule !== 'object') {
+      return res.status(400).json({ 
+        success: false,
+        error: 'Schedule data is required',
+        details: 'Please provide schedule information',
+        field: 'schedule',
+        validation: 'required'
+      });
+    }
+
+    if (!schedule.startTime || !schedule.endTime) {
+      return res.status(400).json({ 
+        success: false,
+        error: 'Schedule times are required',
+        details: 'Please provide both start and end times',
+        fields: ['schedule.startTime', 'schedule.endTime'],
+        validation: 'required'
+      });
+    }
+
     const startTime = new Date(schedule.startTime);
     const endTime = new Date(schedule.endTime);
-    
-    if (isNaN(startTime.getTime()) || isNaN(endTime.getTime())) {
+
+    if (isNaN(startTime.getTime())) {
       return res.status(400).json({ 
-        error: 'Invalid date format',
-        details: 'Please provide valid date/time values'
+        success: false,
+        error: 'Invalid start time',
+        details: 'Start time must be a valid date',
+        field: 'schedule.startTime',
+        validation: 'date-format'
       });
     }
 
-    if (endTime <= startTime) {
+    if (isNaN(endTime.getTime())) {
       return res.status(400).json({ 
-        error: 'Invalid schedule',
-        details: 'End time must be after start time'
+        success: false,
+        error: 'Invalid end time',
+        details: 'End time must be a valid date',
+        field: 'schedule.endTime',
+        validation: 'date-format'
       });
     }
+
+    if (startTime >= endTime) {
+      return res.status(400).json({ 
+        success: false,
+        error: 'Invalid schedule',
+        details: 'End time must be after start time',
+        fields: ['schedule.startTime', 'schedule.endTime'],
+        validation: 'time-order'
+      });
+    }
+
+    // Check if meeting is too far in the past or future
+    const now = new Date();
+    const oneYearFromNow = new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000);
+    
+    if (startTime < now) {
+      return res.status(400).json({ 
+        success: false,
+        error: 'Invalid start time',
+        details: 'Meeting cannot start in the past',
+        field: 'schedule.startTime',
+        validation: 'future-date'
+      });
+    }
+
+    if (startTime > oneYearFromNow) {
+      return res.status(400).json({ 
+        success: false,
+        error: 'Invalid start time',
+        details: 'Meeting cannot be scheduled more than one year in advance',
+        field: 'schedule.startTime',
+        validation: 'max-future-date'
+      });
+    }
+
+    // Validate meeting duration (max 24 hours)
+    const durationHours = (endTime - startTime) / (1000 * 60 * 60);
+    if (durationHours > 24) {
+      return res.status(400).json({ 
+        success: false,
+        error: 'Meeting duration too long',
+        details: 'Meeting cannot be longer than 24 hours',
+        fields: ['schedule.startTime', 'schedule.endTime'],
+        validation: 'max-duration'
+      });
+    }
+
+    // 4. Validate attendance config (if provided)
+    if (attendanceConfig && typeof attendanceConfig === 'object') {
+      // Validate allowed modes
+      if (attendanceConfig.allowedModes) {
+        const allowedModes = attendanceConfig.allowedModes;
+        const validModes = ['smartphoneGPS', 'sms', 'ussd', 'kiosk', 'manual'];
+        const providedModes = Object.keys(allowedModes);
+        
+        for (const mode of providedModes) {
+          if (!validModes.includes(mode)) {
+            return res.status(400).json({ 
+              success: false,
+              error: 'Invalid attendance mode',
+              details: `Unknown attendance mode: ${mode}`,
+              field: `attendanceConfig.allowedModes.${mode}`,
+              validation: 'enum',
+              allowed: validModes
+            });
+          }
+        }
+      }
+
+      // Validate verification strictness
+      if (attendanceConfig.verificationStrictness) {
+        const validStrictness = ['low', 'medium', 'high'];
+        if (!validStrictness.includes(attendanceConfig.verificationStrictness)) {
+          return res.status(400).json({ 
+            success: false,
+            error: 'Invalid verification strictness',
+            details: `Must be one of: ${validStrictness.join(', ')}`,
+            field: 'attendanceConfig.verificationStrictness',
+            validation: 'enum',
+            allowed: validStrictness
+          });
+        }
+      }
+    }
+
+    // 5. Validate custom form fields (if provided)
+    if (customFormFields && Array.isArray(customFormFields)) {
+      for (let i = 0; i < customFormFields.length; i++) {
+        const field = customFormFields[i];
+        
+        if (!field.fieldName || !field.label) {
+          return res.status(400).json({ 
+            success: false,
+            error: 'Invalid custom form field',
+            details: `Field at index ${i} must have fieldName and label`,
+            field: `customFormFields[${i}]`,
+            validation: 'required-fields'
+          });
+        }
+
+        const validFieldTypes = ['text', 'number', 'email', 'tel', 'select', 'checkbox', 'textarea'];
+        if (field.fieldType && !validFieldTypes.includes(field.fieldType)) {
+          return res.status(400).json({ 
+            success: false,
+            error: 'Invalid field type',
+            details: `Field type must be one of: ${validFieldTypes.join(', ')}`,
+            field: `customFormFields[${i}].fieldType`,
+            validation: 'enum',
+            allowed: validFieldTypes
+          });
+        }
+      }
+    }
+
+    // ============= END VALIDATION SECTION =============
+
+    console.log('Validation passed, creating meeting...');
 
     // Generate access codes
     const publicCode = crypto.randomBytes(4).toString('hex').toUpperCase();
     const smsCode = `MTG-${crypto.randomBytes(2).toString('hex').toUpperCase()}`;
     const ussdCode = crypto.randomBytes(3).toString('hex').toUpperCase();
 
-    // Prepare meeting data
+    // Prepare meeting data with defaults
     const meetingData = {
       organizationId: req.user.organizationId._id,
       createdBy: req.user._id,
-      title: title.trim(),
+      title: trimmedTitle,
       description: description ? description.trim() : '',
       location: {
-        name: location.name.trim(),
-        latitude: parseFloat(location.latitude),
-        longitude: parseFloat(location.longitude),
-        radius: location.radius || 100,
-        address: location.address || '',
-        geohash: generateGeohash(location.latitude, location.longitude)
+        name: trimmedLocationName,
+        latitude: latitude,
+        longitude: longitude,
+        radius: radius,
+        address: location.address ? location.address.trim() : '',
+        geohash: generateGeohash(latitude, longitude)
       },
       schedule: {
         startTime: startTime,
@@ -1702,10 +1970,17 @@ app.post('/api/meetings', authenticateToken, async (req, res) => {
         smsCode,
         ussdCode
       },
-      status: 'draft'
+      status: 'draft',
+      createdAt: new Date(),
+      updatedAt: new Date()
     };
 
-    console.log('Meeting data prepared:', meetingData);
+    console.log('Meeting data prepared:', {
+      title: meetingData.title,
+      location: meetingData.location.name,
+      startTime: meetingData.schedule.startTime,
+      accessCodes: meetingData.accessCodes
+    });
 
     // Create meeting
     const meeting = await Meeting.create(meetingData);
@@ -1731,13 +2006,14 @@ app.post('/api/meetings', authenticateToken, async (req, res) => {
       entityId: meeting._id,
       details: { 
         title: meeting.title,
-        publicCode: meeting.accessCodes.publicCode
+        publicCode: meeting.accessCodes.publicCode,
+        location: meeting.location.name
       },
       ipAddress: req.ip,
       userAgent: req.get('User-Agent')
     });
 
-    console.log('Sending response for meeting:', meeting._id);
+    console.log('Sending success response for meeting:', meeting._id);
 
     res.status(201).json({
       success: true,
@@ -1750,7 +2026,8 @@ app.post('/api/meetings', authenticateToken, async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Create meeting error details:', error);
+    console.error('Create meeting error:', error);
+    console.error('Error stack:', error.stack);
     
     // More detailed error response
     if (error.name === 'ValidationError') {
@@ -1760,21 +2037,28 @@ app.post('/api/meetings', authenticateToken, async (req, res) => {
       });
       
       return res.status(400).json({
+        success: false,
         error: 'Validation failed',
-        details: validationErrors
+        details: validationErrors,
+        type: 'mongoose-validation'
       });
     }
     
     if (error.code === 11000) {
       return res.status(400).json({
+        success: false,
         error: 'Duplicate meeting code',
-        details: 'Please try again'
+        details: 'Please try again',
+        type: 'duplicate-key'
       });
     }
     
     res.status(500).json({ 
+      success: false,
       error: 'Failed to create meeting',
-      details: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+      details: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error',
+      type: 'server-error',
+      timestamp: new Date().toISOString()
     });
   }
 });
