@@ -41,6 +41,7 @@ app.use(express.json());
 app.use(limiter);
 app.use(express.urlencoded({ extended: true }));
 
+
 // Add after middleware setup
 app.use((req, res, next) => {
   console.log(`${req.method} ${req.url}`);
@@ -49,6 +50,7 @@ app.use((req, res, next) => {
   }
   next();
 });
+
 
 const corsOptions = {
   origin: function (origin, callback) {
@@ -96,8 +98,14 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 
+// MongoDB Connection
 // MongoDB Connection - FIXED VERSION
-mongoose.connect(process.env.MONGODB_URI || 'mongodb+srv://prezent:prezent@prezent.pw70dzq.mongodb.net/prezent')
+mongoose.connect(process.env.MONGODB_URI || 'mongodb+srv://prezent:prezent@prezent.pw70dzq.mongodb.net/prezent' , {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+  serverSelectionTimeoutMS: 5000,
+  socketTimeoutMS: 45000,
+})
   .then(() => {
     console.log('MongoDB connected successfully');
   })
@@ -161,8 +169,7 @@ const MeetingSchema = new Schema({
     latitude: { type: Number, required: true },
     longitude: { type: Number, required: true },
     address: { type: String },
-    radius: { type: Number, default: 100 }, // meters
-    geohash: { type: String } // For efficient location queries
+    radius: { type: Number, default: 100 } // meters
   },
   schedule: {
     startTime: { type: Date, required: true },
@@ -211,6 +218,7 @@ const MeetingSchema = new Schema({
     enum: ['draft', 'active', 'in_progress', 'completed', 'cancelled'], 
     default: 'draft' 
   },
+   // ADD THESE FIELDS:
   customFormFields: [{
     fieldName: { type: String, required: true },
     fieldType: { 
@@ -248,6 +256,8 @@ const MeetingSchema = new Schema({
     qrCodeUrl: { type: String }
   },
   
+  
+
   // PWA settings
   pwaSettings: {
     enablePWA: { type: Boolean, default: true },
@@ -294,46 +304,26 @@ const AttendanceRecordSchema = new Schema({
     },
     distanceFromVenue: { type: Number }, // in meters
     address: { type: String },
-    isWithinRadius: { type: Boolean },
-    validationDetails: { type: Map, of: Schema.Types.Mixed }
+    isWithinRadius: { type: Boolean }
   },
   deviceInfo: {
     userAgent: { type: String },
     deviceId: { type: String },
     platform: { type: String },
-    ipAddress: { type: String },
-    locationCapabilities: { type: Map, of: Schema.Types.Mixed }
+    ipAddress: { type: String }
   },
   verificationDetails: {
     confidenceScore: { type: Number, min: 0, max: 100, default: 0 },
     verificationMethod: { type: String },
     verifiedByAdminId: { type: Schema.Types.ObjectId, ref: 'AdminUser' },
     verificationTimestamp: { type: Date },
-    manualVerificationReason: { type: String },
-    timeVerified: { type: Date },
-    timeVerifiedBy: { type: Schema.Types.ObjectId, ref: 'AdminUser' },
-    locationVerificationScore: { type: Number },
-    spoofingRisk: { type: String },
-    requiresTimeVerification: { type: Boolean, default: false },
-    minimumStayRequired: { type: Number, default: 0 }
+    manualVerificationReason: { type: String }
   },
   timeTracking: {
     checkInTime: { type: Date, required: true },
     checkOutTime: { type: Date },
     totalDuration: { type: Number }, // in minutes
-    meetsTimeRequirement: { type: Boolean, default: false },
-    meetsMinimumStay: { type: Boolean, default: false },
-    monitoringEnabled: { type: Boolean, default: false },
-    lastLocationCheck: { type: Date },
-    locationHistory: [{
-      timestamp: { type: Date },
-      latitude: { type: Number },
-      longitude: { type: Number },
-      accuracy: { type: Number },
-      validated: { type: Boolean },
-      validationScore: { type: Number },
-      isWithinRadius: { type: Boolean }
-    }]
+    meetsTimeRequirement: { type: Boolean, default: false }
   },
   status: { 
     type: String, 
@@ -355,28 +345,13 @@ const DeviceFingerprintSchema = new Schema({
   deviceId: { type: String, required: true, unique: true },
   organizationId: { type: Schema.Types.ObjectId, ref: 'Organization', required: true },
   lastUsed: { type: Date, default: Date.now },
-  lastLocation: {
-    latitude: { type: Number },
-    longitude: { type: Number },
-    accuracy: { type: Number },
-    timestamp: { type: Date }
-  },
   metadata: {
     userAgent: { type: String },
     platform: { type: String },
     os: { type: String },
     browser: { type: String },
-    screenResolution: { type: String },
-    hasGPS: { type: Boolean },
-    locationAccuracy: { type: Number }
+    screenResolution: { type: String }
   },
-  pushSubscription: { type: Map, of: Schema.Types.Mixed },
-  locationHistory: [{
-    timestamp: { type: Date },
-    latitude: { type: Number },
-    longitude: { type: Number },
-    meetingId: { type: Schema.Types.ObjectId, ref: 'Meeting' }
-  }],
   isBlacklisted: { type: Boolean, default: false },
   createdAt: { type: Date, default: Date.now }
 });
@@ -453,6 +428,8 @@ const calculateDistance = (lat1, lon1, lat2, lon2) => {
 
   return R * c; // Distance in meters
 };
+
+// Add this after the existing calculateDistance function (around line 353)
 
 // Enhanced location validation with multiple checks
 const validateLocation = (userLat, userLon, meetingLat, meetingLon, radius, userAccuracy) => {
@@ -720,6 +697,20 @@ const generateAttendancePDF = async (meeting, records, organization) => {
   });
 };
 
+// Add these helper functions after line 353 (after generateAttendanceExcel function)
+
+// Generate meeting links
+// const generateMeetingLinks = (meetingId, publicCode) => {
+//   const baseUrl = process.env.FRONTEND_URL || 'https://gsf-inky.vercel.app';
+//   return {
+//     adminDashboard: `${baseUrl}/admin/meetings/${meetingId}`,
+//     attendeeForm: `${baseUrl}/attend/${publicCode}`,
+//     qrCodeUrl: `${baseUrl}/api/meetings/${meetingId}/qrcode`,
+//     publicAttendanceLink: `${baseUrl}/attend/${publicCode}/form`
+//   };
+// };
+
+
 // Generate meeting links
 const generateMeetingLinks = (meetingId, publicCode) => {
   const baseUrl = process.env.FRONTEND_URL || 'https://gsf-inky.vercel.app';
@@ -732,24 +723,241 @@ const generateMeetingLinks = (meetingId, publicCode) => {
   };
 };
 
-// Generate meeting QR Code
-const generateMeetingQRCode = async (meetingCode) => {
+
+// Replace the entire /api/meetings POST endpoint (around line 600) with this:
+
+app.post('/api/meetings', authenticateToken, async (req, res) => {
   try {
-    const url = `${process.env.FRONTEND_URL || 'https://gsf-inky.vercel.app'}/attend/${meetingCode}`;
-    const qrCode = await QRCode.toDataURL(url, {
-      width: 300,
-      margin: 2,
-      color: {
-        dark: '#4361ee',
-        light: '#ffffff'
+    const {
+      title,
+      description,
+      location,
+      schedule,
+      attendanceConfig,
+      customFormFields,
+      timeVerification,
+      pwaSettings
+    } = req.body;
+
+    console.log('Creating meeting for user:', req.user._id);
+    console.log('Meeting data:', { title, location, schedule });
+
+    // Basic validation
+    if (!title || !title.trim()) {
+      return res.status(400).json({ 
+        error: 'Meeting title is required',
+        details: 'Please provide a meeting title'
+      });
+    }
+
+    if (!location || !location.name || !location.latitude || !location.longitude) {
+      return res.status(400).json({ 
+        error: 'Location data is incomplete',
+        details: 'Please provide location name, latitude, and longitude'
+      });
+    }
+
+    if (!schedule || !schedule.startTime || !schedule.endTime) {
+      return res.status(400).json({ 
+        error: 'Schedule data is incomplete',
+        details: 'Please provide start and end times'
+      });
+    }
+
+    // Validate date times
+    const startTime = new Date(schedule.startTime);
+    const endTime = new Date(schedule.endTime);
+    
+    if (isNaN(startTime.getTime()) || isNaN(endTime.getTime())) {
+      return res.status(400).json({ 
+        error: 'Invalid date format',
+        details: 'Please provide valid date/time values'
+      });
+    }
+
+    if (endTime <= startTime) {
+      return res.status(400).json({ 
+        error: 'Invalid schedule',
+        details: 'End time must be after start time'
+      });
+    }
+
+    // Generate access codes
+    const publicCode = crypto.randomBytes(4).toString('hex').toUpperCase();
+    const smsCode = `MTG-${crypto.randomBytes(2).toString('hex').toUpperCase()}`;
+    const ussdCode = crypto.randomBytes(3).toString('hex').toUpperCase();
+
+    // Prepare meeting data
+    const meetingData = {
+      organizationId: req.user.organizationId._id,
+      createdBy: req.user._id,
+      title: title.trim(),
+      description: description ? description.trim() : '',
+      location: {
+        name: location.name.trim(),
+        latitude: parseFloat(location.latitude),
+        longitude: parseFloat(location.longitude),
+        radius: location.radius || 100,
+        address: location.address || ''
+      },
+      schedule: {
+        startTime: startTime,
+        endTime: endTime,
+        attendanceStart: schedule.attendanceStart || 
+          new Date(startTime.getTime() - 30 * 60000), // 30 minutes before
+        attendanceEnd: schedule.attendanceEnd || 
+          new Date(endTime.getTime() + 30 * 60000), // 30 minutes after
+        bufferBefore: schedule.bufferBefore || 30,
+        bufferAfter: schedule.bufferAfter || 30
+      },
+      attendanceConfig: attendanceConfig || {
+        allowedModes: {
+          smartphoneGPS: req.user.organizationId.settings?.allowGPS !== false,
+          sms: req.user.organizationId.settings?.allowSMS !== false,
+          ussd: req.user.organizationId.settings?.allowUSSD !== false,
+          kiosk: req.user.organizationId.settings?.allowKiosk !== false,
+          manual: req.user.organizationId.settings?.allowManual !== false
+        },
+        requiredFields: [{ field: 'fullName', isRequired: true }],
+        verificationStrictness: 'medium',
+        duplicatePrevention: {
+          preventSameDevice: true,
+          preventSamePhone: true,
+          preventSameNameTime: true,
+          timeWindowMinutes: 5
+        }
+      },
+      customFormFields: customFormFields || [],
+      timeVerification: timeVerification || {
+        requireMinimumStay: false,
+        minimumStayMinutes: 5,
+        enableContinuousMonitoring: false,
+        monitoringInterval: 5
+      },
+      pwaSettings: pwaSettings || {
+        enablePWA: true,
+        appName: 'GSAMS Attendance',
+        themeColor: '#2196F3',
+        backgroundColor: '#ffffff'
+      },
+      accessCodes: {
+        publicCode,
+        smsCode,
+        ussdCode
+      },
+      status: 'draft'
+    };
+
+    console.log('Meeting data prepared:', meetingData);
+
+    // Create meeting
+    const meeting = await Meeting.create(meetingData);
+    
+    console.log('Meeting created successfully:', meeting._id);
+
+    // Generate meeting links
+    const meetingLinks = generateMeetingLinks(meeting._id, publicCode);
+    
+    // Update meeting with links
+    meeting.shareLinks = meetingLinks;
+    await meeting.save();
+
+    // Generate QR code
+    const qrCode = await generateMeetingQRCode(publicCode);
+
+    // Create audit log
+    await AuditLog.create({
+      organizationId: req.user.organizationId._id,
+      userId: req.user._id,
+      action: 'MEETING_CREATED',
+      entityType: 'meeting',
+      entityId: meeting._id,
+      details: { 
+        title: meeting.title,
+        publicCode: meeting.accessCodes.publicCode
+      },
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent')
+    });
+
+    console.log('Sending response for meeting:', meeting._id);
+
+    res.status(201).json({
+      success: true,
+      message: 'Meeting created successfully',
+      meeting: {
+        ...meeting.toObject(),
+        qrCode,
+        links: meetingLinks
       }
     });
-    return qrCode;
+
   } catch (error) {
-    console.error('QR Code generation error:', error);
-    return null;
+    console.error('Create meeting error details:', error);
+    
+    // More detailed error response
+    if (error.name === 'ValidationError') {
+      const validationErrors = {};
+      Object.keys(error.errors).forEach(key => {
+        validationErrors[key] = error.errors[key].message;
+      });
+      
+      return res.status(400).json({
+        error: 'Validation failed',
+        details: validationErrors
+      });
+    }
+    
+    if (error.code === 11000) {
+      return res.status(400).json({
+        error: 'Duplicate meeting code',
+        details: 'Please try again'
+      });
+    }
+    
+    res.status(500).json({ 
+      error: 'Failed to create meeting',
+      details: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    });
   }
-};
+});
+
+
+
+
+// Get QR code for meeting (image download)
+app.get('/api/meetings/:meetingId/qr-code', authenticateToken, async (req, res) => {
+  try {
+    const meeting = await Meeting.findOne({
+      _id: req.params.meetingId,
+      organizationId: req.user.organizationId._id
+    });
+
+    if (!meeting) {
+      return res.status(404).json({ error: 'Meeting not found' });
+    }
+
+    const qrCode = await generateMeetingQRCode(meeting.accessCodes.publicCode);
+    
+    if (!qrCode) {
+      return res.status(500).json({ error: 'Failed to generate QR code' });
+    }
+
+    // Remove the data URL prefix
+    const base64Data = qrCode.replace(/^data:image\/png;base64,/, '');
+    const imgBuffer = Buffer.from(base64Data, 'base64');
+
+    res.setHeader('Content-Type', 'image/png');
+    res.setHeader('Content-Disposition', `attachment; filename="qr-code-${meeting.title.replace(/[^a-z0-9]/gi, '-').toLowerCase()}.png"`);
+    res.send(imgBuffer);
+
+  } catch (error) {
+    console.error('QR code endpoint error:', error);
+    res.status(500).json({ error: 'Failed to generate QR code' });
+  }
+});
+
+
 
 // Generate PWA manifest
 const generatePWAManifest = (meeting, organization) => {
@@ -1192,53 +1400,7 @@ const generateAttendanceExcel = async (meeting, records, organization) => {
   return buffer;
 };
 
-// Geohash generation
-const generateGeohash = (latitude, longitude, precision = 9) => {
-  const base32 = '0123456789bcdefghjkmnpqrstuvwxyz';
-  let hash = '';
-  let bits = 0;
-  let bit = 0;
-  
-  let latMin = -90, latMax = 90;
-  let lonMin = -180, lonMax = 180;
-  
-  while (hash.length < precision) {
-    if (bits % 2 === 0) {
-      // Even bit: bisect longitude
-      const lonMid = (lonMin + lonMax) / 2;
-      if (longitude < lonMid) {
-        bit = bit << 1;
-        lonMax = lonMid;
-      } else {
-        bit = (bit << 1) | 1;
-        lonMin = lonMid;
-      }
-    } else {
-      // Odd bit: bisect latitude
-      const latMid = (latMin + latMax) / 2;
-      if (latitude < latMid) {
-        bit = bit << 1;
-        latMax = latMid;
-      } else {
-        bit = (bit << 1) | 1;
-        latMin = latMid;
-      }
-    }
-    
-    bits++;
-    
-    if (bits % 5 === 0) {
-      hash += base32[bit];
-      bit = 0;
-    }
-  }
-  
-  return hash;
-};
-
-// ================= AUTHENTICATION MIDDLEWARE =================
-
-// Authentication Middleware - MUST BE DEFINED BEFORE ROUTES THAT USE IT
+// Authentication Middleware
 const authenticateToken = async (req, res, next) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
@@ -1279,654 +1441,14 @@ const isSuperAdmin = (req, res, next) => {
   next();
 };
 
-// Check organization access
-const checkOrganizationAccess = async (req, res, next) => {
-  const organizationId = req.params.organizationId || req.body.organizationId;
-  
-  if (!organizationId) {
-    return res.status(400).json({ error: 'Organization ID required' });
-  }
-  
-  if (req.user.organizationId._id.toString() !== organizationId.toString()) {
-    return res.status(403).json({ error: 'Access to this organization denied' });
-  }
-  
-  next();
-};
 
-// Validate meeting completion
-const validateMeetingCompletion = (meeting) => {
-  const validation = {
-    allSectionsComplete: false,
-    sections: {
-      meetingDetails: false,
-      attendanceForm: false,
-      shareQRCode: false,
-      advancedSettings: false
-    },
-    messages: []
-  };
+// Add after existing meeting routes (around line 610)
 
-  // 1. Check Meeting Details
-  if (meeting.title && 
-      meeting.location.name && 
-      meeting.location.latitude && 
-      meeting.location.longitude &&
-      meeting.schedule.startTime &&
-      meeting.schedule.endTime) {
-    validation.sections.meetingDetails = true;
-  } else {
-    validation.messages.push('Meeting details incomplete: Title, location, and schedule are required');
-  }
-
-  // 2. Check Attendance Form (if required fields are configured)
-  const hasRequiredFields = meeting.attendanceConfig?.requiredFields?.length > 0 ||
-                           meeting.customFormFields?.length > 0;
-  validation.sections.attendanceForm = hasRequiredFields;
-  if (!hasRequiredFields) {
-    validation.messages.push('Attendance form incomplete: Configure at least one required field');
-  }
-
-  // 3. Check Share & QR Code (access codes should be generated)
-  validation.sections.shareQRCode = meeting.accessCodes?.publicCode && 
-                                    meeting.accessCodes?.smsCode && 
-                                    meeting.accessCodes?.ussdCode;
-  if (!validation.sections.shareQRCode) {
-    validation.messages.push('Share & QR Code section incomplete: Generate access codes');
-  }
-
-  // 4. Check Advanced Settings (at least one attendance method enabled)
-  const attendanceMethods = meeting.attendanceConfig?.allowedModes;
-  const hasEnabledMethods = attendanceMethods && (
-    attendanceMethods.smartphoneGPS ||
-    attendanceMethods.sms ||
-    attendanceMethods.ussd ||
-    attendanceMethods.kiosk ||
-    attendanceMethods.manual
-  );
-  validation.sections.advancedSettings = hasEnabledMethods;
-  if (!hasEnabledMethods) {
-    validation.messages.push('Advanced settings incomplete: Enable at least one attendance method');
-  }
-
-  // Check if all sections are complete
-  validation.allSectionsComplete = Object.values(validation.sections).every(section => section === true);
-
-  return validation;
-};
-
-// Validation functions
-const validateMeetingDetails = (data) => {
-  if (!data.title || !data.title.trim()) {
-    return { isValid: false, message: 'Meeting title is required' };
-  }
-  if (!data.location?.name || !data.location?.latitude || !data.location?.longitude) {
-    return { isValid: false, message: 'Location details are required' };
-  }
-  if (!data.schedule?.startTime || !data.schedule?.endTime) {
-    return { isValid: false, message: 'Schedule times are required' };
-  }
-  if (new Date(data.schedule.startTime) >= new Date(data.schedule.endTime)) {
-    return { isValid: false, message: 'End time must be after start time' };
-  }
-  return { isValid: true, message: 'Meeting details are valid' };
-};
-
-const validateAttendanceForm = (data) => {
-  const hasRequiredFields = (data.requiredFields && data.requiredFields.length > 0) ||
-                           (data.customFormFields && data.customFormFields.length > 0);
-  
-  if (!hasRequiredFields) {
-    return { 
-      isValid: false, 
-      message: 'At least one field must be configured in the attendance form' 
-    };
-  }
-  return { isValid: true, message: 'Attendance form is valid' };
-};
-
-const validateAdvancedSettings = (data) => {
-  const hasEnabledMethods = data.allowedModes && (
-    data.allowedModes.smartphoneGPS ||
-    data.allowedModes.sms ||
-    data.allowedModes.ussd ||
-    data.allowedModes.kiosk ||
-    data.allowedModes.manual
-  );
-  
-  if (!hasEnabledMethods) {
-    return { 
-      isValid: false, 
-      message: 'At least one attendance method must be enabled' 
-    };
-  }
-  return { isValid: true, message: 'Advanced settings are valid' };
-};
-
-// ================= ROUTES =================
-
-// 1. Authentication Routes
-app.post('/api/auth/register', async (req, res) => {
-  try {
-    const { email, password, fullName, phone, organizationName } = req.body;
-    
-    // Check if user already exists
-    const existingUser = await AdminUser.findOne({ email });
-    if (existingUser) {
-      return res.status(400).json({ error: 'User already exists' });
-    }
-    
-    // Create organization (first user becomes super admin)
-    const organization = await Organization.create({
-      name: organizationName,
-      domain: email.split('@')[1]
-    });
-    
-    // Hash password
-    const hashedPassword = await bcrypt.hash(password, 10);
-    
-    // Create super admin user
-    const user = await AdminUser.create({
-      organizationId: organization._id,
-      email,
-      password: hashedPassword,
-      fullName,
-      phone,
-      role: 'super_admin',
-      permissions: {
-        canCreateMeetings: true,
-        canEditMeetings: true,
-        canDeleteMeetings: true,
-        canViewReports: true,
-        canManageAdmins: true,
-        canApproveAttendance: true
-      }
-    });
-    
-    // Generate JWT token
-    const token = jwt.sign(
-      { userId: user._id, role: user.role, organizationId: organization._id },
-      process.env.JWT_SECRET || 'your-secret-key',
-      { expiresIn: '24h' }
-    );
-    
-    // Log the registration
-    await AuditLog.create({
-      organizationId: organization._id,
-      userId: user._id,
-      action: 'USER_REGISTERED',
-      entityType: 'user',
-      entityId: user._id,
-      details: { email, role: 'super_admin' },
-      ipAddress: req.ip,
-      userAgent: req.get('User-Agent')
-    });
-    
-    res.status(201).json({
-      token,
-      user: {
-        id: user._id,
-        email: user.email,
-        fullName: user.fullName,
-        role: user.role,
-        organization: {
-          id: organization._id,
-          name: organization.name
-        }
-      }
-    });
-  } catch (error) {
-    console.error('Registration error:', error);
-    res.status(500).json({ error: 'Registration failed' });
-  }
-});
-
-app.post('/api/auth/login', async (req, res) => {
-  try {
-    const { email, password } = req.body;
-    
-    // Find user
-    const user = await AdminUser.findOne({ email }).populate('organizationId');
-    if (!user) {
-      return res.status(401).json({ error: 'Invalid credentials' });
-    }
-    
-    // Check if user is active
-    if (!user.isActive) {
-      return res.status(401).json({ error: 'Account is deactivated' });
-    }
-    
-    // Verify password
-    const validPassword = await bcrypt.compare(password, user.password);
-    if (!validPassword) {
-      return res.status(401).json({ error: 'Invalid credentials' });
-    }
-    
-    // Update last login
-    user.lastLogin = new Date();
-    await user.save();
-    
-    // Generate JWT token
-    const token = jwt.sign(
-      { userId: user._id, role: user.role, organizationId: user.organizationId._id },
-      process.env.JWT_SECRET || 'your-secret-key',
-      { expiresIn: '24h' }
-    );
-    
-    // Log the login
-    await AuditLog.create({
-      organizationId: user.organizationId._id,
-      userId: user._id,
-      action: 'USER_LOGIN',
-      entityType: 'user',
-      entityId: user._id,
-      details: { email },
-      ipAddress: req.ip,
-      userAgent: req.get('User-Agent')
-    });
-    
-    res.json({
-      token,
-      user: {
-        id: user._id,
-        email: user.email,
-        fullName: user.fullName,
-        role: user.role,
-        organization: {
-          id: user.organizationId._id,
-          name: user.organizationId.name
-        },
-        permissions: user.permissions
-      }
-    });
-  } catch (error) {
-    console.error('Login error:', error);
-    res.status(500).json({ error: 'Login failed' });
-  }
-});
-
-// 2. Organization Routes
-app.get('/api/organization', authenticateToken, async (req, res) => {
-  try {
-    const organization = await Organization.findById(req.user.organizationId._id);
-    res.json(organization);
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch organization' });
-  }
-});
-
-app.put('/api/organization/settings', authenticateToken, isSuperAdmin, async (req, res) => {
-  try {
-    const { settings } = req.body;
-    const organization = await Organization.findByIdAndUpdate(
-      req.user.organizationId._id,
-      { $set: { settings } },
-      { new: true }
-    );
-    
-    await AuditLog.create({
-      organizationId: req.user.organizationId._id,
-      userId: req.user._id,
-      action: 'ORGANIZATION_SETTINGS_UPDATED',
-      entityType: 'organization',
-      entityId: organization._id,
-      details: { settings },
-      ipAddress: req.ip,
-      userAgent: req.get('User-Agent')
-    });
-    
-    res.json(organization);
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to update settings' });
-  }
-});
-
-// 3. Meeting Routes
-app.post('/api/meetings', authenticateToken, async (req, res) => {
-  try {
-    const {
-      title,
-      description,
-      location,
-      schedule,
-      attendanceConfig,
-      customFormFields,
-      timeVerification,
-      pwaSettings
-    } = req.body;
-
-    console.log('Creating meeting for user:', req.user._id);
-    console.log('Meeting data:', { title, location, schedule });
-
-    // Basic validation
-    if (!title || !title.trim()) {
-      return res.status(400).json({ 
-        error: 'Meeting title is required',
-        details: 'Please provide a meeting title'
-      });
-    }
-
-    if (!location || !location.name || !location.latitude || !location.longitude) {
-      return res.status(400).json({ 
-        error: 'Location data is incomplete',
-        details: 'Please provide location name, latitude, and longitude'
-      });
-    }
-
-    if (!schedule || !schedule.startTime || !schedule.endTime) {
-      return res.status(400).json({ 
-        error: 'Schedule data is incomplete',
-        details: 'Please provide start and end times'
-      });
-    }
-
-    // Validate date times
-    const startTime = new Date(schedule.startTime);
-    const endTime = new Date(schedule.endTime);
-    
-    if (isNaN(startTime.getTime()) || isNaN(endTime.getTime())) {
-      return res.status(400).json({ 
-        error: 'Invalid date format',
-        details: 'Please provide valid date/time values'
-      });
-    }
-
-    if (endTime <= startTime) {
-      return res.status(400).json({ 
-        error: 'Invalid schedule',
-        details: 'End time must be after start time'
-      });
-    }
-
-    // Generate access codes
-    const publicCode = crypto.randomBytes(4).toString('hex').toUpperCase();
-    const smsCode = `MTG-${crypto.randomBytes(2).toString('hex').toUpperCase()}`;
-    const ussdCode = crypto.randomBytes(3).toString('hex').toUpperCase();
-
-    // Prepare meeting data
-    const meetingData = {
-      organizationId: req.user.organizationId._id,
-      createdBy: req.user._id,
-      title: title.trim(),
-      description: description ? description.trim() : '',
-      location: {
-        name: location.name.trim(),
-        latitude: parseFloat(location.latitude),
-        longitude: parseFloat(location.longitude),
-        radius: location.radius || 100,
-        address: location.address || '',
-        geohash: generateGeohash(location.latitude, location.longitude)
-      },
-      schedule: {
-        startTime: startTime,
-        endTime: endTime,
-        attendanceStart: schedule.attendanceStart || 
-          new Date(startTime.getTime() - 30 * 60000), // 30 minutes before
-        attendanceEnd: schedule.attendanceEnd || 
-          new Date(endTime.getTime() + 30 * 60000), // 30 minutes after
-        bufferBefore: schedule.bufferBefore || 30,
-        bufferAfter: schedule.bufferAfter || 30
-      },
-      attendanceConfig: attendanceConfig || {
-        allowedModes: {
-          smartphoneGPS: req.user.organizationId.settings?.allowGPS !== false,
-          sms: req.user.organizationId.settings?.allowSMS !== false,
-          ussd: req.user.organizationId.settings?.allowUSSD !== false,
-          kiosk: req.user.organizationId.settings?.allowKiosk !== false,
-          manual: req.user.organizationId.settings?.allowManual !== false
-        },
-        requiredFields: [{ field: 'fullName', isRequired: true }],
-        verificationStrictness: 'medium',
-        duplicatePrevention: {
-          preventSameDevice: true,
-          preventSamePhone: true,
-          preventSameNameTime: true,
-          timeWindowMinutes: 5
-        }
-      },
-      customFormFields: customFormFields || [],
-      timeVerification: timeVerification || {
-        requireMinimumStay: false,
-        minimumStayMinutes: 5,
-        enableContinuousMonitoring: false,
-        monitoringInterval: 5
-      },
-      pwaSettings: pwaSettings || {
-        enablePWA: true,
-        appName: 'GSAMS Attendance',
-        themeColor: '#2196F3',
-        backgroundColor: '#ffffff'
-      },
-      accessCodes: {
-        publicCode,
-        smsCode,
-        ussdCode
-      },
-      status: 'draft'
-    };
-
-    console.log('Meeting data prepared:', meetingData);
-
-    // Create meeting
-    const meeting = await Meeting.create(meetingData);
-    
-    console.log('Meeting created successfully:', meeting._id);
-
-    // Generate meeting links
-    const meetingLinks = generateMeetingLinks(meeting._id, publicCode);
-    
-    // Update meeting with links
-    meeting.shareLinks = meetingLinks;
-    await meeting.save();
-
-    // Generate QR code
-    const qrCode = await generateMeetingQRCode(publicCode);
-
-    // Create audit log
-    await AuditLog.create({
-      organizationId: req.user.organizationId._id,
-      userId: req.user._id,
-      action: 'MEETING_CREATED',
-      entityType: 'meeting',
-      entityId: meeting._id,
-      details: { 
-        title: meeting.title,
-        publicCode: meeting.accessCodes.publicCode
-      },
-      ipAddress: req.ip,
-      userAgent: req.get('User-Agent')
-    });
-
-    console.log('Sending response for meeting:', meeting._id);
-
-    res.status(201).json({
-      success: true,
-      message: 'Meeting created successfully',
-      meeting: {
-        ...meeting.toObject(),
-        qrCode,
-        links: meetingLinks
-      }
-    });
-
-  } catch (error) {
-    console.error('Create meeting error details:', error);
-    
-    // More detailed error response
-    if (error.name === 'ValidationError') {
-      const validationErrors = {};
-      Object.keys(error.errors).forEach(key => {
-        validationErrors[key] = error.errors[key].message;
-      });
-      
-      return res.status(400).json({
-        error: 'Validation failed',
-        details: validationErrors
-      });
-    }
-    
-    if (error.code === 11000) {
-      return res.status(400).json({
-        error: 'Duplicate meeting code',
-        details: 'Please try again'
-      });
-    }
-    
-    res.status(500).json({ 
-      error: 'Failed to create meeting',
-      details: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
-    });
-  }
-});
-
-app.get('/api/meetings', authenticateToken, async (req, res) => {
-  try {
-    const { status, startDate, endDate } = req.query;
-    
-    const query = {
-      organizationId: req.user.organizationId._id
-    };
-    
-    if (status) query.status = status;
-    if (startDate && endDate) {
-      query['schedule.startTime'] = {
-        $gte: new Date(startDate),
-        $lte: new Date(endDate)
-      };
-    }
-    
-    const meetings = await Meeting.find(query)
-      .populate('createdBy', 'fullName email')
-      .sort({ 'schedule.startTime': -1 });
-    
-    res.json(meetings);
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch meetings' });
-  }
-});
-
-app.get('/api/meetings/:meetingId', authenticateToken, async (req, res) => {
-  try {
-    const meeting = await Meeting.findOne({
-      _id: req.params.meetingId,
-      organizationId: req.user.organizationId._id
-    }).populate('createdBy', 'fullName email');
-    
-    if (!meeting) {
-      return res.status(404).json({ error: 'Meeting not found' });
-    }
-    
-    // Generate QR code if needed
-    const qrCode = await generateMeetingQRCode(meeting.accessCodes.publicCode);
-    
-    res.json({
-      ...meeting.toObject(),
-      qrCode
-    });
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch meeting' });
-  }
-});
-
-app.put('/api/meetings/:meetingId', authenticateToken, async (req, res) => {
-  try {
-    const meeting = await Meeting.findOneAndUpdate(
-      {
-        _id: req.params.meetingId,
-        organizationId: req.user.organizationId._id
-      },
-      { ...req.body, updatedAt: new Date() },
-      { new: true }
-    );
-    
-    if (!meeting) {
-      return res.status(404).json({ error: 'Meeting not found' });
-    }
-    
-    await AuditLog.create({
-      organizationId: req.user.organizationId._id,
-      userId: req.user._id,
-      action: 'MEETING_UPDATED',
-      entityType: 'meeting',
-      entityId: meeting._id,
-      details: { updates: req.body },
-      ipAddress: req.ip,
-      userAgent: req.get('User-Agent')
-    });
-    
-    res.json(meeting);
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to update meeting' });
-  }
-});
-
-app.post('/api/meetings/:meetingId/start', authenticateToken, async (req, res) => {
-  try {
-    const meeting = await Meeting.findOneAndUpdate(
-      {
-        _id: req.params.meetingId,
-        organizationId: req.user.organizationId._id,
-        status: { $in: ['draft', 'active'] }
-      },
-      { status: 'in_progress', updatedAt: new Date() },
-      { new: true }
-    );
-    
-    if (!meeting) {
-      return res.status(404).json({ error: 'Meeting not found or cannot be started' });
-    }
-    
-    await AuditLog.create({
-      organizationId: req.user.organizationId._id,
-      userId: req.user._id,
-      action: 'MEETING_STARTED',
-      entityType: 'meeting',
-      entityId: meeting._id,
-      details: {},
-      ipAddress: req.ip,
-      userAgent: req.get('User-Agent')
-    });
-    
-    res.json(meeting);
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to start meeting' });
-  }
-});
-
-app.post('/api/meetings/:meetingId/end', authenticateToken, async (req, res) => {
-  try {
-    const meeting = await Meeting.findOneAndUpdate(
-      {
-        _id: req.params.meetingId,
-        organizationId: req.user.organizationId._id,
-        status: 'in_progress'
-      },
-      { status: 'completed', updatedAt: new Date() },
-      { new: true }
-    );
-    
-    if (!meeting) {
-      return res.status(404).json({ error: 'Meeting not found or cannot be ended' });
-    }
-    
-    await AuditLog.create({
-      organizationId: req.user.organizationId._id,
-      userId: req.user._id,
-      action: 'MEETING_ENDED',
-      entityType: 'meeting',
-      entityId: meeting._id,
-      details: {},
-      ipAddress: req.ip,
-      userAgent: req.get('User-Agent')
-    });
-    
-    res.json(meeting);
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to end meeting' });
-  }
-});
+// ================= NEW MEETING APIs =================
 
 // DELETE Meeting
+
+// Enhanced DELETE Meeting endpoint - REPLACE THE EXISTING ONE
 app.delete('/api/meetings/:meetingId', authenticateToken, async (req, res) => {
   try {
     console.log('DELETE meeting request:', req.params.meetingId, 'by user:', req.user._id);
@@ -2042,6 +1564,7 @@ app.delete('/api/meetings/:meetingId', authenticateToken, async (req, res) => {
   }
 });
 
+
 // Get meeting with enhanced details including links
 app.get('/api/meetings/:meetingId/details', authenticateToken, async (req, res) => {
   try {
@@ -2125,36 +1648,36 @@ app.get('/api/meetings/:meetingId/details', authenticateToken, async (req, res) 
   }
 });
 
-// Get QR code for meeting (image download)
+// Get QR code for meeting
 app.get('/api/meetings/:meetingId/qr-code', authenticateToken, async (req, res) => {
-  try {
-    const meeting = await Meeting.findOne({
-      _id: req.params.meetingId,
-      organizationId: req.user.organizationId._id
-    });
+    try {
+        const meeting = await Meeting.findOne({
+            _id: req.params.meetingId,
+            organizationId: req.user.organizationId._id
+        });
 
-    if (!meeting) {
-      return res.status(404).json({ error: 'Meeting not found' });
+        if (!meeting) {
+            return res.status(404).json({ error: 'Meeting not found' });
+        }
+
+        const qrCode = await generateMeetingQRCode(meeting.accessCodes.publicCode);
+        
+        if (!qrCode) {
+            return res.status(500).json({ error: 'Failed to generate QR code' });
+        }
+
+        // Remove the data URL prefix
+        const base64Data = qrCode.replace(/^data:image\/png;base64,/, '');
+        const imgBuffer = Buffer.from(base64Data, 'base64');
+
+        res.setHeader('Content-Type', 'image/png');
+        res.setHeader('Content-Disposition', `attachment; filename="qr-code-${meeting.title}.png"`);
+        res.send(imgBuffer);
+
+    } catch (error) {
+        console.error('QR code endpoint error:', error);
+        res.status(500).json({ error: 'Failed to generate QR code' });
     }
-
-    const qrCode = await generateMeetingQRCode(meeting.accessCodes.publicCode);
-    
-    if (!qrCode) {
-      return res.status(500).json({ error: 'Failed to generate QR code' });
-    }
-
-    // Remove the data URL prefix
-    const base64Data = qrCode.replace(/^data:image\/png;base64,/, '');
-    const imgBuffer = Buffer.from(base64Data, 'base64');
-
-    res.setHeader('Content-Type', 'image/png');
-    res.setHeader('Content-Disposition', `attachment; filename="qr-code-${meeting.title.replace(/[^a-z0-9]/gi, '-').toLowerCase()}.png"`);
-    res.send(imgBuffer);
-
-  } catch (error) {
-    console.error('QR code endpoint error:', error);
-    res.status(500).json({ error: 'Failed to generate QR code' });
-  }
 });
 
 // Enhanced API for setting/updating meeting location with validation
@@ -2228,6 +1751,7 @@ app.post('/api/meetings/:meetingId/location', authenticateToken, async (req, res
       longitude,
       address: address || meeting.location.address,
       radius: validRadius,
+      // Store geohash for efficient location queries
       geohash: generateGeohash(latitude, longitude)
     };
     
@@ -2269,6 +1793,9 @@ app.post('/api/meetings/:meetingId/location', authenticateToken, async (req, res
     });
   }
 });
+
+
+// ================= ENHANCED MEETING MANAGEMENT APIs =================
 
 // Get meeting details with enhanced information (including form validation)
 app.get('/api/meetings/:meetingId/full', authenticateToken, async (req, res) => {
@@ -2312,6 +1839,67 @@ app.get('/api/meetings/:meetingId/full', authenticateToken, async (req, res) => 
     res.status(500).json({ error: 'Failed to fetch meeting details' });
   }
 });
+
+// Validate meeting completion
+const validateMeetingCompletion = (meeting) => {
+  const validation = {
+    allSectionsComplete: false,
+    sections: {
+      meetingDetails: false,
+      attendanceForm: false,
+      shareQRCode: false,
+      advancedSettings: false
+    },
+    messages: []
+  };
+
+  // 1. Check Meeting Details
+  if (meeting.title && 
+      meeting.location.name && 
+      meeting.location.latitude && 
+      meeting.location.longitude &&
+      meeting.schedule.startTime &&
+      meeting.schedule.endTime) {
+    validation.sections.meetingDetails = true;
+  } else {
+    validation.messages.push('Meeting details incomplete: Title, location, and schedule are required');
+  }
+
+  // 2. Check Attendance Form (if required fields are configured)
+  const hasRequiredFields = meeting.attendanceConfig?.requiredFields?.length > 0 ||
+                           meeting.customFormFields?.length > 0;
+  validation.sections.attendanceForm = hasRequiredFields;
+  if (!hasRequiredFields) {
+    validation.messages.push('Attendance form incomplete: Configure at least one required field');
+  }
+
+  // 3. Check Share & QR Code (access codes should be generated)
+  validation.sections.shareQRCode = meeting.accessCodes?.publicCode && 
+                                    meeting.accessCodes?.smsCode && 
+                                    meeting.accessCodes?.ussdCode;
+  if (!validation.sections.shareQRCode) {
+    validation.messages.push('Share & QR Code section incomplete: Generate access codes');
+  }
+
+  // 4. Check Advanced Settings (at least one attendance method enabled)
+  const attendanceMethods = meeting.attendanceConfig?.allowedModes;
+  const hasEnabledMethods = attendanceMethods && (
+    attendanceMethods.smartphoneGPS ||
+    attendanceMethods.sms ||
+    attendanceMethods.ussd ||
+    attendanceMethods.kiosk ||
+    attendanceMethods.manual
+  );
+  validation.sections.advancedSettings = hasEnabledMethods;
+  if (!hasEnabledMethods) {
+    validation.messages.push('Advanced settings incomplete: Enable at least one attendance method');
+  }
+
+  // Check if all sections are complete
+  validation.allSectionsComplete = Object.values(validation.sections).every(section => section === true);
+
+  return validation;
+};
 
 // Activate meeting and generate share links
 app.post('/api/meetings/:meetingId/activate', authenticateToken, async (req, res) => {
@@ -2505,6 +2093,54 @@ app.patch('/api/meetings/:meetingId/sections/:section', authenticateToken, async
   }
 });
 
+// Validation functions
+const validateMeetingDetails = (data) => {
+  if (!data.title || !data.title.trim()) {
+    return { isValid: false, message: 'Meeting title is required' };
+  }
+  if (!data.location?.name || !data.location?.latitude || !data.location?.longitude) {
+    return { isValid: false, message: 'Location details are required' };
+  }
+  if (!data.schedule?.startTime || !data.schedule?.endTime) {
+    return { isValid: false, message: 'Schedule times are required' };
+  }
+  if (new Date(data.schedule.startTime) >= new Date(data.schedule.endTime)) {
+    return { isValid: false, message: 'End time must be after start time' };
+  }
+  return { isValid: true, message: 'Meeting details are valid' };
+};
+
+const validateAttendanceForm = (data) => {
+  const hasRequiredFields = (data.requiredFields && data.requiredFields.length > 0) ||
+                           (data.customFormFields && data.customFormFields.length > 0);
+  
+  if (!hasRequiredFields) {
+    return { 
+      isValid: false, 
+      message: 'At least one field must be configured in the attendance form' 
+    };
+  }
+  return { isValid: true, message: 'Attendance form is valid' };
+};
+
+const validateAdvancedSettings = (data) => {
+  const hasEnabledMethods = data.allowedModes && (
+    data.allowedModes.smartphoneGPS ||
+    data.allowedModes.sms ||
+    data.allowedModes.ussd ||
+    data.allowedModes.kiosk ||
+    data.allowedModes.manual
+  );
+  
+  if (!hasEnabledMethods) {
+    return { 
+      isValid: false, 
+      message: 'At least one attendance method must be enabled' 
+    };
+  }
+  return { isValid: true, message: 'Advanced settings are valid' };
+};
+
 // Get all meetings with enhanced details for the meetings table
 app.get('/api/organization/meetings/enhanced', authenticateToken, async (req, res) => {
   try {
@@ -2565,6 +2201,11 @@ app.get('/api/organization/meetings/enhanced', authenticateToken, async (req, re
     res.status(500).json({ error: 'Failed to fetch meetings' });
   }
 });
+
+
+
+
+
 
 // Update meeting with custom form
 app.put('/api/meetings/:meetingId/form', authenticateToken, async (req, res) => {
@@ -2676,9 +2317,497 @@ app.get('/api/meetings/:publicCode/form', async (req, res) => {
   }
 });
 
+// Check organization access
+const checkOrganizationAccess = async (req, res, next) => {
+  const organizationId = req.params.organizationId || req.body.organizationId;
+  
+  if (!organizationId) {
+    return res.status(400).json({ error: 'Organization ID required' });
+  }
+  
+  if (req.user.organizationId._id.toString() !== organizationId.toString()) {
+    return res.status(403).json({ error: 'Access to this organization denied' });
+  }
+  
+  next();
+};
+
+// Generate QR Code for meeting
+const generateMeetingQRCode = async (meetingCode) => {
+  try {
+    const url = `${process.env.FRONTEND_URL || 'https://gsf-inky.vercel.app'}/attend/${meetingCode}`;
+    const qrCode = await QRCode.toDataURL(url, {
+      width: 300,
+      margin: 2,
+      color: {
+        dark: '#4361ee',
+        light: '#ffffff'
+      }
+    });
+    return qrCode;
+  } catch (error) {
+    console.error('QR Code generation error:', error);
+    return null;
+  }
+};
+
+// Routes
+
+// 1. Authentication Routes
+app.post('/api/auth/register', async (req, res) => {
+  try {
+    const { email, password, fullName, phone, organizationName } = req.body;
+    
+    // Check if user already exists
+    const existingUser = await AdminUser.findOne({ email });
+    if (existingUser) {
+      return res.status(400).json({ error: 'User already exists' });
+    }
+    
+    // Create organization (first user becomes super admin)
+    const organization = await Organization.create({
+      name: organizationName,
+      domain: email.split('@')[1]
+    });
+    
+    // Hash password
+    const hashedPassword = await bcrypt.hash(password, 10);
+    
+    // Create super admin user
+    const user = await AdminUser.create({
+      organizationId: organization._id,
+      email,
+      password: hashedPassword,
+      fullName,
+      phone,
+      role: 'super_admin',
+      permissions: {
+        canCreateMeetings: true,
+        canEditMeetings: true,
+        canDeleteMeetings: true,
+        canViewReports: true,
+        canManageAdmins: true,
+        canApproveAttendance: true
+      }
+    });
+    
+    // Generate JWT token
+    const token = jwt.sign(
+      { userId: user._id, role: user.role, organizationId: organization._id },
+      process.env.JWT_SECRET || 'your-secret-key',
+      { expiresIn: '24h' }
+    );
+    
+    // Log the registration
+    await AuditLog.create({
+      organizationId: organization._id,
+      userId: user._id,
+      action: 'USER_REGISTERED',
+      entityType: 'user',
+      entityId: user._id,
+      details: { email, role: 'super_admin' },
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent')
+    });
+    
+    res.status(201).json({
+      token,
+      user: {
+        id: user._id,
+        email: user.email,
+        fullName: user.fullName,
+        role: user.role,
+        organization: {
+          id: organization._id,
+          name: organization.name
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Registration error:', error);
+    res.status(500).json({ error: 'Registration failed' });
+  }
+});
+
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    
+    // Find user
+    const user = await AdminUser.findOne({ email }).populate('organizationId');
+    if (!user) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+    
+    // Check if user is active
+    if (!user.isActive) {
+      return res.status(401).json({ error: 'Account is deactivated' });
+    }
+    
+    // Verify password
+    const validPassword = await bcrypt.compare(password, user.password);
+    if (!validPassword) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+    
+    // Update last login
+    user.lastLogin = new Date();
+    await user.save();
+    
+    // Generate JWT token
+    const token = jwt.sign(
+      { userId: user._id, role: user.role, organizationId: user.organizationId._id },
+      process.env.JWT_SECRET || 'your-secret-key',
+      { expiresIn: '24h' }
+    );
+    
+    // Log the login
+    await AuditLog.create({
+      organizationId: user.organizationId._id,
+      userId: user._id,
+      action: 'USER_LOGIN',
+      entityType: 'user',
+      entityId: user._id,
+      details: { email },
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent')
+    });
+    
+    res.json({
+      token,
+      user: {
+        id: user._id,
+        email: user.email,
+        fullName: user.fullName,
+        role: user.role,
+        organization: {
+          id: user.organizationId._id,
+          name: user.organizationId.name
+        },
+        permissions: user.permissions
+      }
+    });
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({ error: 'Login failed' });
+  }
+});
+
+// 2. Organization Routes
+app.get('/api/organization', authenticateToken, async (req, res) => {
+  try {
+    const organization = await Organization.findById(req.user.organizationId._id);
+    res.json(organization);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch organization' });
+  }
+});
+
+app.put('/api/organization/settings', authenticateToken, isSuperAdmin, async (req, res) => {
+  try {
+    const { settings } = req.body;
+    const organization = await Organization.findByIdAndUpdate(
+      req.user.organizationId._id,
+      { $set: { settings } },
+      { new: true }
+    );
+    
+    await AuditLog.create({
+      organizationId: req.user.organizationId._id,
+      userId: req.user._id,
+      action: 'ORGANIZATION_SETTINGS_UPDATED',
+      entityType: 'organization',
+      entityId: organization._id,
+      details: { settings },
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent')
+    });
+    
+    res.json(organization);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to update settings' });
+  }
+});
+
+// 3. Meeting Routes
+app.post('/api/meetings', authenticateToken, async (req, res) => {
+  try {
+    const {
+      title,
+      description,
+      location,
+      schedule,
+      attendanceConfig
+    } = req.body;
+
+    // Validate location data
+    if (!location || !location.latitude || !location.longitude) {
+      return res.status(400).json({
+        error: 'Meeting location is required',
+        details: 'Please provide latitude and longitude for the meeting venue'
+      });
+    }
+
+
+    // Validate coordinates
+    if (location.latitude < -90 || location.latitude > 90 || 
+        location.longitude < -180 || location.longitude > 180) {
+      return res.status(400).json({
+        error: 'Invalid coordinates',
+        details: 'Latitude must be between -90 and 90, Longitude between -180 and 180'
+      });
+    }
+
+      // Validate radius
+    const radius = location.radius || req.user.organizationId.settings.defaultLocationRadius;
+    if (radius < 10 || radius > 10000) {
+      return res.status(400).json({
+        error: 'Invalid radius',
+        details: 'Radius must be between 10 and 10,000 meters',
+        recommended: req.user.organizationId.settings.defaultLocationRadius
+      });
+    }
+    
+    // Generate unique codes
+    const publicCode = generateAccessCode();
+    const smsCode = `MTG-${generateAccessCode().slice(0, 4)}`;
+    const ussdCode = generateAccessCode().slice(0, 6);
+    
+    const meeting = await Meeting.create({
+      organizationId: req.user.organizationId._id,
+      createdBy: req.user._id,
+      title,
+      description,
+      location: {
+        ...location,
+        radius: location.radius || req.user.organizationId.settings.defaultLocationRadius
+      },
+      schedule: {
+        ...schedule,
+        attendanceStart: schedule.attendanceStart || 
+          new Date(new Date(schedule.startTime).getTime() - (schedule.bufferBefore || 30) * 60000),
+        attendanceEnd: schedule.attendanceEnd || 
+          new Date(new Date(schedule.endTime).getTime() + (schedule.bufferAfter || 30) * 60000)
+      },
+      // ADD THESE:
+        customFormFields: req.body.customFormFields || [],
+        timeVerification: req.body.timeVerification || {
+          requireMinimumStay: false,
+          minimumStayMinutes: 5,
+          enableContinuousMonitoring: false,
+          monitoringInterval: 5,
+          maxAllowedAbsence: 2,
+          autoVerifyAfterStay: false,
+          autoVerifyMinutes: 10
+        },
+        pwaSettings: req.body.pwaSettings || {
+          enablePWA: true,
+          appName: 'GSAMS Attendance',
+          themeColor: '#2196F3',
+          backgroundColor: '#ffffff'
+        },
+      attendanceConfig: attendanceConfig || {
+        allowedModes: req.user.organizationId.settings,
+        requiredFields: [{ field: 'fullName', isRequired: true }],
+        verificationStrictness: 'medium',
+        duplicatePrevention: {
+          preventSameDevice: true,
+          preventSamePhone: true,
+          preventSameNameTime: true,
+          timeWindowMinutes: 5
+        },
+        timeRequirement: {
+          minimumMinutes: 15,
+          enableTimeTrack: false,
+          maxAbsenceMinutes: 5
+        }
+      },
+      accessCodes: {
+        publicCode,
+        smsCode,
+        ussdCode
+      },
+      status: 'draft'
+    });
+    
+    // Generate QR code
+    const qrCode = await generateMeetingQRCode(publicCode);
+    
+    await AuditLog.create({
+      organizationId: req.user.organizationId._id,
+      userId: req.user._id,
+      action: 'MEETING_CREATED',
+      entityType: 'meeting',
+      entityId: meeting._id,
+      details: { title, publicCode },
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent')
+    });
+    
+    res.status(201).json({
+      ...meeting.toObject(),
+      qrCode
+    });
+  } catch (error) {
+    console.error('Create meeting error:', error);
+    res.status(500).json({ error: 'Failed to create meeting' });
+  }
+});
+
+app.get('/api/meetings', authenticateToken, async (req, res) => {
+  try {
+    const { status, startDate, endDate } = req.query;
+    
+    const query = {
+      organizationId: req.user.organizationId._id
+    };
+    
+    if (status) query.status = status;
+    if (startDate && endDate) {
+      query['schedule.startTime'] = {
+        $gte: new Date(startDate),
+        $lte: new Date(endDate)
+      };
+    }
+    
+    const meetings = await Meeting.find(query)
+      .populate('createdBy', 'fullName email')
+      .sort({ 'schedule.startTime': -1 });
+    
+    res.json(meetings);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch meetings' });
+  }
+});
+
+app.get('/api/meetings/:meetingId', authenticateToken, async (req, res) => {
+  try {
+    const meeting = await Meeting.findOne({
+      _id: req.params.meetingId,
+      organizationId: req.user.organizationId._id
+    }).populate('createdBy', 'fullName email');
+    
+    if (!meeting) {
+      return res.status(404).json({ error: 'Meeting not found' });
+    }
+    
+    // Generate QR code if needed
+    const qrCode = await generateMeetingQRCode(meeting.accessCodes.publicCode);
+    
+    res.json({
+      ...meeting.toObject(),
+      qrCode
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch meeting' });
+  }
+});
+
+app.put('/api/meetings/:meetingId', authenticateToken, async (req, res) => {
+  try {
+    const meeting = await Meeting.findOneAndUpdate(
+      {
+        _id: req.params.meetingId,
+        organizationId: req.user.organizationId._id
+      },
+      { ...req.body, updatedAt: new Date() },
+      { new: true }
+    );
+    
+    if (!meeting) {
+      return res.status(404).json({ error: 'Meeting not found' });
+    }
+    
+    await AuditLog.create({
+      organizationId: req.user.organizationId._id,
+      userId: req.user._id,
+      action: 'MEETING_UPDATED',
+      entityType: 'meeting',
+      entityId: meeting._id,
+      details: { updates: req.body },
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent')
+    });
+    
+    res.json(meeting);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to update meeting' });
+  }
+});
+
+app.post('/api/meetings/:meetingId/start', authenticateToken, async (req, res) => {
+  try {
+    const meeting = await Meeting.findOneAndUpdate(
+      {
+        _id: req.params.meetingId,
+        organizationId: req.user.organizationId._id,
+        status: { $in: ['draft', 'active'] }
+      },
+      { status: 'in_progress', updatedAt: new Date() },
+      { new: true }
+    );
+    
+    if (!meeting) {
+      return res.status(404).json({ error: 'Meeting not found or cannot be started' });
+    }
+    
+    await AuditLog.create({
+      organizationId: req.user.organizationId._id,
+      userId: req.user._id,
+      action: 'MEETING_STARTED',
+      entityType: 'meeting',
+      entityId: meeting._id,
+      details: {},
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent')
+    });
+    
+    res.json(meeting);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to start meeting' });
+  }
+});
+
+app.post('/api/meetings/:meetingId/end', authenticateToken, async (req, res) => {
+  try {
+    const meeting = await Meeting.findOneAndUpdate(
+      {
+        _id: req.params.meetingId,
+        organizationId: req.user.organizationId._id,
+        status: 'in_progress'
+      },
+      { status: 'completed', updatedAt: new Date() },
+      { new: true }
+    );
+    
+    if (!meeting) {
+      return res.status(404).json({ error: 'Meeting not found or cannot be ended' });
+    }
+    
+    await AuditLog.create({
+      organizationId: req.user.organizationId._id,
+      userId: req.user._id,
+      action: 'MEETING_ENDED',
+      entityType: 'meeting',
+      entityId: meeting._id,
+      details: {},
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent')
+    });
+    
+    res.json(meeting);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to end meeting' });
+  }
+});
+
 // 4. Attendance Routes
 
 // Smartphone GPS Attendance
+// Enhanced smartphone attendance with time verification
+// Replace the existing /api/attend/smartphone endpoint (around line 650) with this enhanced version:
+
+// Enhanced smartphone attendance with strict location verification
 app.post('/api/attend/smartphone', async (req, res) => {
   try {
     const { meetingCode, attendeeInfo, locationData, deviceInfo, formData } = req.body;
@@ -3297,6 +3426,457 @@ app.post('/api/webhooks/sms', async (req, res) => {
   }
 });
 
+// Add these new routes after line 1100
+
+// ================= REAL-TIME MONITORING APIs =================
+
+// Update location for continuous monitoring
+app.post('/api/attendance/:attendanceId/location', async (req, res) => {
+  try {
+    const { latitude, longitude, accuracy, meetingCode } = req.body;
+    
+    const attendance = await AttendanceRecord.findOne({
+      _id: req.params.attendanceId
+    }).populate('meetingId');
+    
+    if (!attendance) {
+      return res.status(404).json({ error: 'Attendance record not found' });
+    }
+    
+    const meeting = attendance.meetingId;
+    
+    // Verify meeting code
+    if (meeting.accessCodes.publicCode !== meetingCode) {
+      return res.status(403).json({ error: 'Invalid meeting code' });
+    }
+    
+    const now = new Date();
+    
+    // Check if still within radius
+    const distance = calculateDistance(
+      latitude,
+      longitude,
+      meeting.location.latitude,
+      meeting.location.longitude
+    );
+    
+    const isWithinRadius = distance <= meeting.location.radius;
+    
+    // Update location history
+    if (!attendance.timeTracking.locationHistory) {
+      attendance.timeTracking.locationHistory = [];
+    }
+    
+    attendance.timeTracking.locationHistory.push({
+      timestamp: now,
+      latitude,
+      longitude,
+      accuracy,
+      isWithinRadius
+    });
+    
+    attendance.timeTracking.lastLocationCheck = now;
+    
+    // Check for excessive absence
+    if (meeting.timeVerification?.enableContinuousMonitoring) {
+      const recentLocations = attendance.timeTracking.locationHistory
+        .filter(loc => new Date(loc.timestamp) > new Date(now.getTime() - 10 * 60000)) // Last 10 minutes
+        .filter(loc => loc.isWithinRadius);
+      
+      const presencePercentage = (recentLocations.length / 10) * 100; // Assuming 1 check per minute
+      
+      if (presencePercentage < 80) { // Less than 80% presence
+        attendance.auditTrail.push({
+          action: 'LOW_PRESENCE_WARNING',
+          performedBy: null,
+          notes: `Low presence detected: ${presencePercentage.toFixed(1)}% in last 10 minutes`
+        });
+      }
+    }
+    
+    await attendance.save();
+    
+    res.json({
+      success: true,
+      isWithinRadius,
+      distance,
+      lastCheck: now,
+      totalChecks: attendance.timeTracking.locationHistory.length
+    });
+    
+  } catch (error) {
+    console.error('Location update error:', error);
+    res.status(500).json({ error: 'Failed to update location' });
+  }
+});
+
+// Get real-time attendance monitoring
+app.get('/api/meetings/:meetingId/monitor', authenticateToken, async (req, res) => {
+  try {
+    const meeting = await Meeting.findOne({
+      _id: req.params.meetingId,
+      organizationId: req.user.organizationId._id
+    });
+    
+    if (!meeting) {
+      return res.status(404).json({ error: 'Meeting not found' });
+    }
+    
+    // Get active attendance records
+    const activeAttendances = await AttendanceRecord.find({
+      meetingId: meeting._id,
+      status: { $in: ['pending', 'verified'] },
+      'timeTracking.checkOutTime': { $exists: false }
+    })
+    .select('attendeeInfo.fullName verificationType timeTracking locationData verificationDetails')
+    .lean();
+    
+    // Enrich with monitoring data
+    const monitoredAttendances = activeAttendances.map(attendance => {
+      const checkInTime = new Date(attendance.timeTracking.checkInTime);
+      const now = new Date();
+      const durationMinutes = Math.round((now - checkInTime) / (1000 * 60));
+      
+      return {
+        ...attendance,
+        durationMinutes,
+        meetsMinimumStay: durationMinutes >= (meeting.timeVerification?.minimumStayMinutes || 0),
+        lastLocationCheck: attendance.timeTracking.lastLocationCheck,
+        locationChecks: attendance.timeTracking.locationHistory?.length || 0,
+        isCurrentlyPresent: attendance.timeTracking.locationHistory?.slice(-1)[0]?.isWithinRadius || false
+      };
+    });
+    
+    res.json({
+      meetingId: meeting._id,
+      title: meeting.title,
+      timeVerificationEnabled: meeting.timeVerification?.requireMinimumStay || false,
+      monitoringEnabled: meeting.timeVerification?.enableContinuousMonitoring || false,
+      totalActive: monitoredAttendances.length,
+      attendees: monitoredAttendances
+    });
+    
+  } catch (error) {
+    console.error('Monitor error:', error);
+    res.status(500).json({ error: 'Failed to fetch monitoring data' });
+  }
+});
+
+// Manually verify time-based attendance
+app.post('/api/attendance/:attendanceId/verify-time', authenticateToken, async (req, res) => {
+  try {
+    const { notes } = req.body;
+    
+    const attendance = await AttendanceRecord.findOne({
+      _id: req.params.attendanceId,
+      organizationId: req.user.organizationId._id
+    }).populate('meetingId');
+    
+    if (!attendance) {
+      return res.status(404).json({ error: 'Attendance record not found' });
+    }
+    
+    const meeting = attendance.meetingId;
+    
+    // Check time verification requirements
+    if (!meeting.timeVerification?.requireMinimumStay) {
+      return res.status(400).json({ error: 'Time verification not required for this meeting' });
+    }
+    
+    const checkInTime = new Date(attendance.timeTracking.checkInTime);
+    const now = new Date();
+    const durationMinutes = Math.round((now - checkInTime) / (1000 * 60));
+    
+    const meetsMinimumStay = durationMinutes >= meeting.timeVerification.minimumStayMinutes;
+    
+    if (!meetsMinimumStay) {
+      return res.status(400).json({ 
+        error: 'Minimum stay requirement not met',
+        currentDuration: durationMinutes,
+        requiredDuration: meeting.timeVerification.minimumStayMinutes
+      });
+    }
+    
+    // Verify attendance
+    attendance.status = 'verified';
+    attendance.verificationDetails.confidenceScore = Math.min(
+      attendance.verificationDetails.confidenceScore + 20,
+      100
+    );
+    attendance.verificationDetails.timeVerified = now;
+    attendance.verificationDetails.timeVerifiedBy = req.user._id;
+    
+    attendance.auditTrail.push({
+      action: 'TIME_VERIFICATION',
+      performedBy: req.user._id,
+      notes: `Time verification: ${durationMinutes} minutes attendance. ${notes || ''}`
+    });
+    
+    attendance.updatedAt = now;
+    await attendance.save();
+    
+    await AuditLog.create({
+      organizationId: req.user.organizationId._id,
+      userId: req.user._id,
+      action: 'ATTENDANCE_TIME_VERIFIED',
+      entityType: 'attendance',
+      entityId: attendance._id,
+      details: {
+        attendeeName: attendance.attendeeInfo.fullName,
+        durationMinutes,
+        requiredMinutes: meeting.timeVerification.minimumStayMinutes
+      },
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent')
+    });
+    
+    res.json({
+      success: true,
+      attendanceId: attendance._id,
+      status: attendance.status,
+      durationMinutes,
+      confidenceScore: attendance.verificationDetails.confidenceScore,
+      message: 'Attendance time-verified successfully'
+    });
+    
+  } catch (error) {
+    console.error('Time verification error:', error);
+    res.status(500).json({ error: 'Failed to verify attendance time' });
+  }
+});
+
+
+
+// Add these routes after line 1250
+
+// ================= ENHANCED EXPORT APIs =================
+
+// Export all meetings as PDF
+app.get('/api/organization/meetings/export/pdf', authenticateToken, async (req, res) => {
+  try {
+    const { startDate, endDate, status } = req.query;
+    
+    const query = {
+      organizationId: req.user.organizationId._id
+    };
+    
+    if (startDate && endDate) {
+      query['schedule.startTime'] = {
+        $gte: new Date(startDate),
+        $lte: new Date(endDate)
+      };
+    }
+    
+    if (status) {
+      query.status = status;
+    }
+    
+    const meetings = await Meeting.find(query)
+      .populate('createdBy', 'fullName')
+      .sort({ 'schedule.startTime': -1 })
+      .lean();
+    
+    // Get attendance counts for each meeting
+    for (const meeting of meetings) {
+      const attendanceCount = await AttendanceRecord.countDocuments({
+        meetingId: meeting._id
+      });
+      meeting.attendanceCount = attendanceCount;
+    }
+    
+    const organization = await Organization.findById(req.user.organizationId._id);
+    
+    // Generate PDF
+    const pdfBuffer = await generateAllMeetingsPDF(
+      meetings, 
+      organization, 
+      startDate || new Date(0), 
+      endDate || new Date()
+    );
+    
+    await AuditLog.create({
+      organizationId: req.user.organizationId._id,
+      userId: req.user._id,
+      action: 'EXPORT_ALL_MEETINGS_PDF',
+      entityType: 'organization',
+      entityId: organization._id,
+      details: { 
+        meetingCount: meetings.length,
+        dateRange: { startDate, endDate }
+      },
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent')
+    });
+    
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="all-meetings-${moment().format('YYYY-MM-DD')}.pdf"`);
+    res.send(pdfBuffer);
+    
+  } catch (error) {
+    console.error('Export all meetings PDF error:', error);
+    res.status(500).json({ error: 'Failed to generate PDF' });
+  }
+});
+
+// Export all meetings as Excel
+app.get('/api/organization/meetings/export/excel', authenticateToken, async (req, res) => {
+  try {
+    const { startDate, endDate, status } = req.query;
+    
+    const query = {
+      organizationId: req.user.organizationId._id
+    };
+    
+    if (startDate && endDate) {
+      query['schedule.startTime'] = {
+        $gte: new Date(startDate),
+        $lte: new Date(endDate)
+      };
+    }
+    
+    if (status) {
+      query.status = status;
+    }
+    
+    const meetings = await Meeting.find(query)
+      .populate('createdBy', 'fullName')
+      .sort({ 'schedule.startTime': -1 })
+      .lean();
+    
+    const organization = await Organization.findById(req.user.organizationId._id);
+    
+    // Create workbook
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('All Meetings');
+    
+    // Header
+    worksheet.mergeCells('A1:H1');
+    worksheet.getCell('A1').value = organization.name;
+    worksheet.getCell('A1').font = { size: 16, bold: true };
+    worksheet.getCell('A1').alignment = { horizontal: 'center' };
+    
+    worksheet.mergeCells('A2:H2');
+    worksheet.getCell('A2').value = 'All Meetings Report';
+    worksheet.getCell('A2').font = { size: 14, bold: true };
+    worksheet.getCell('A2').alignment = { horizontal: 'center' };
+    
+    // Date range
+    if (startDate && endDate) {
+      worksheet.mergeCells('A3:H3');
+      worksheet.getCell('A3').value = `Period: ${moment(startDate).format('MMM DD, YYYY')} to ${moment(endDate).format('MMM DD, YYYY')}`;
+      worksheet.getCell('A3').alignment = { horizontal: 'center' };
+    }
+    
+    // Table header
+    const headerRow = 5;
+    const headers = ['Title', 'Date', 'Time', 'Location', 'Status', 'Created By', 'Attendees', 'Duration'];
+    
+    headers.forEach((header, index) => {
+      const cell = worksheet.getCell(headerRow, index + 1);
+      cell.value = header;
+      cell.font = { bold: true };
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FFE0E0E0' }
+      };
+      cell.border = {
+        top: { style: 'thin' },
+        left: { style: 'thin' },
+        bottom: { style: 'thin' },
+        right: { style: 'thin' }
+      };
+    });
+    
+    // Add meetings data
+    for (let i = 0; i < meetings.length; i++) {
+      const meeting = meetings[i];
+      const row = headerRow + i + 1;
+      
+      // Get attendance count
+      const attendanceCount = await AttendanceRecord.countDocuments({
+        meetingId: meeting._id
+      });
+      
+      // Calculate duration
+      const start = new Date(meeting.schedule.startTime);
+      const end = new Date(meeting.schedule.endTime);
+      const durationHours = Math.round((end - start) / (1000 * 60 * 60) * 10) / 10;
+      
+      worksheet.getCell(`A${row}`).value = meeting.title;
+      worksheet.getCell(`B${row}`).value = moment(meeting.schedule.startTime).format('YYYY-MM-DD');
+      worksheet.getCell(`C${row}`).value = moment(meeting.schedule.startTime).format('HH:mm');
+      worksheet.getCell(`D${row}`).value = meeting.location.name;
+      worksheet.getCell(`E${row}`).value = meeting.status.toUpperCase();
+      worksheet.getCell(`F${row}`).value = meeting.createdBy?.fullName || 'Unknown';
+      worksheet.getCell(`G${row}`).value = attendanceCount;
+      worksheet.getCell(`H${row}`).value = durationHours;
+      
+      // Color code status
+      const statusCell = worksheet.getCell(`E${row}`);
+      const statusColors = {
+        'draft': 'FFFFCC',
+        'active': 'CCFFCC',
+        'in_progress': '00FF00',
+        'completed': 'CCCCCC',
+        'cancelled': 'FFCCCC'
+      };
+      
+      statusCell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: statusColors[meeting.status] || 'FFFFFF' }
+      };
+      
+      // Add borders
+      for (let j = 1; j <= headers.length; j++) {
+        const cell = worksheet.getCell(row, j);
+        cell.border = {
+          top: { style: 'thin' },
+          left: { style: 'thin' },
+          bottom: { style: 'thin' },
+          right: { style: 'thin' }
+        };
+      }
+    }
+    
+    // Auto fit columns
+    worksheet.columns.forEach(column => {
+      let maxLength = 0;
+      column.eachCell({ includeEmpty: true }, cell => {
+        const columnLength = cell.value ? cell.value.toString().length : 10;
+        if (columnLength > maxLength) {
+          maxLength = columnLength;
+        }
+      });
+      column.width = Math.min(maxLength + 2, 30);
+    });
+    
+    // Generate buffer
+    const buffer = await workbook.xlsx.writeBuffer();
+    
+    await AuditLog.create({
+      organizationId: req.user.organizationId._id,
+      userId: req.user._id,
+      action: 'EXPORT_ALL_MEETINGS_EXCEL',
+      entityType: 'organization',
+      entityId: organization._id,
+      details: { meetingCount: meetings.length },
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent')
+    });
+    
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="all-meetings-${moment().format('YYYY-MM-DD')}.xlsx"`);
+    res.send(buffer);
+    
+  } catch (error) {
+    console.error('Export all meetings Excel error:', error);
+    res.status(500).json({ error: 'Failed to generate Excel' });
+  }
+});
+
+// USSD Attendance
 // USSD Attendance
 app.post('/api/ussd', async (req, res) => {
   try {
@@ -3988,450 +4568,6 @@ app.post('/api/attendance/:attendanceId/checkout', async (req, res) => {
   }
 });
 
-// ================= REAL-TIME MONITORING APIs =================
-
-// Update location for continuous monitoring
-app.post('/api/attendance/:attendanceId/location', async (req, res) => {
-  try {
-    const { latitude, longitude, accuracy, meetingCode } = req.body;
-    
-    const attendance = await AttendanceRecord.findOne({
-      _id: req.params.attendanceId
-    }).populate('meetingId');
-    
-    if (!attendance) {
-      return res.status(404).json({ error: 'Attendance record not found' });
-    }
-    
-    const meeting = attendance.meetingId;
-    
-    // Verify meeting code
-    if (meeting.accessCodes.publicCode !== meetingCode) {
-      return res.status(403).json({ error: 'Invalid meeting code' });
-    }
-    
-    const now = new Date();
-    
-    // Check if still within radius
-    const distance = calculateDistance(
-      latitude,
-      longitude,
-      meeting.location.latitude,
-      meeting.location.longitude
-    );
-    
-    const isWithinRadius = distance <= meeting.location.radius;
-    
-    // Update location history
-    if (!attendance.timeTracking.locationHistory) {
-      attendance.timeTracking.locationHistory = [];
-    }
-    
-    attendance.timeTracking.locationHistory.push({
-      timestamp: now,
-      latitude,
-      longitude,
-      accuracy,
-      isWithinRadius
-    });
-    
-    attendance.timeTracking.lastLocationCheck = now;
-    
-    // Check for excessive absence
-    if (meeting.timeVerification?.enableContinuousMonitoring) {
-      const recentLocations = attendance.timeTracking.locationHistory
-        .filter(loc => new Date(loc.timestamp) > new Date(now.getTime() - 10 * 60000)) // Last 10 minutes
-        .filter(loc => loc.isWithinRadius);
-      
-      const presencePercentage = (recentLocations.length / 10) * 100; // Assuming 1 check per minute
-      
-      if (presencePercentage < 80) { // Less than 80% presence
-        attendance.auditTrail.push({
-          action: 'LOW_PRESENCE_WARNING',
-          performedBy: null,
-          notes: `Low presence detected: ${presencePercentage.toFixed(1)}% in last 10 minutes`
-        });
-      }
-    }
-    
-    await attendance.save();
-    
-    res.json({
-      success: true,
-      isWithinRadius,
-      distance,
-      lastCheck: now,
-      totalChecks: attendance.timeTracking.locationHistory.length
-    });
-    
-  } catch (error) {
-    console.error('Location update error:', error);
-    res.status(500).json({ error: 'Failed to update location' });
-  }
-});
-
-// Get real-time attendance monitoring
-app.get('/api/meetings/:meetingId/monitor', authenticateToken, async (req, res) => {
-  try {
-    const meeting = await Meeting.findOne({
-      _id: req.params.meetingId,
-      organizationId: req.user.organizationId._id
-    });
-    
-    if (!meeting) {
-      return res.status(404).json({ error: 'Meeting not found' });
-    }
-    
-    // Get active attendance records
-    const activeAttendances = await AttendanceRecord.find({
-      meetingId: meeting._id,
-      status: { $in: ['pending', 'verified'] },
-      'timeTracking.checkOutTime': { $exists: false }
-    })
-    .select('attendeeInfo.fullName verificationType timeTracking locationData verificationDetails')
-    .lean();
-    
-    // Enrich with monitoring data
-    const monitoredAttendances = activeAttendances.map(attendance => {
-      const checkInTime = new Date(attendance.timeTracking.checkInTime);
-      const now = new Date();
-      const durationMinutes = Math.round((now - checkInTime) / (1000 * 60));
-      
-      return {
-        ...attendance,
-        durationMinutes,
-        meetsMinimumStay: durationMinutes >= (meeting.timeVerification?.minimumStayMinutes || 0),
-        lastLocationCheck: attendance.timeTracking.lastLocationCheck,
-        locationChecks: attendance.timeTracking.locationHistory?.length || 0,
-        isCurrentlyPresent: attendance.timeTracking.locationHistory?.slice(-1)[0]?.isWithinRadius || false
-      };
-    });
-    
-    res.json({
-      meetingId: meeting._id,
-      title: meeting.title,
-      timeVerificationEnabled: meeting.timeVerification?.requireMinimumStay || false,
-      monitoringEnabled: meeting.timeVerification?.enableContinuousMonitoring || false,
-      totalActive: monitoredAttendances.length,
-      attendees: monitoredAttendances
-    });
-    
-  } catch (error) {
-    console.error('Monitor error:', error);
-    res.status(500).json({ error: 'Failed to fetch monitoring data' });
-  }
-});
-
-// Manually verify time-based attendance
-app.post('/api/attendance/:attendanceId/verify-time', authenticateToken, async (req, res) => {
-  try {
-    const { notes } = req.body;
-    
-    const attendance = await AttendanceRecord.findOne({
-      _id: req.params.attendanceId,
-      organizationId: req.user.organizationId._id
-    }).populate('meetingId');
-    
-    if (!attendance) {
-      return res.status(404).json({ error: 'Attendance record not found' });
-    }
-    
-    const meeting = attendance.meetingId;
-    
-    // Check time verification requirements
-    if (!meeting.timeVerification?.requireMinimumStay) {
-      return res.status(400).json({ error: 'Time verification not required for this meeting' });
-    }
-    
-    const checkInTime = new Date(attendance.timeTracking.checkInTime);
-    const now = new Date();
-    const durationMinutes = Math.round((now - checkInTime) / (1000 * 60));
-    
-    const meetsMinimumStay = durationMinutes >= meeting.timeVerification.minimumStayMinutes;
-    
-    if (!meetsMinimumStay) {
-      return res.status(400).json({ 
-        error: 'Minimum stay requirement not met',
-        currentDuration: durationMinutes,
-        requiredDuration: meeting.timeVerification.minimumStayMinutes
-      });
-    }
-    
-    // Verify attendance
-    attendance.status = 'verified';
-    attendance.verificationDetails.confidenceScore = Math.min(
-      attendance.verificationDetails.confidenceScore + 20,
-      100
-    );
-    attendance.verificationDetails.timeVerified = now;
-    attendance.verificationDetails.timeVerifiedBy = req.user._id;
-    
-    attendance.auditTrail.push({
-      action: 'TIME_VERIFICATION',
-      performedBy: req.user._id,
-      notes: `Time verification: ${durationMinutes} minutes attendance. ${notes || ''}`
-    });
-    
-    attendance.updatedAt = now;
-    await attendance.save();
-    
-    await AuditLog.create({
-      organizationId: req.user.organizationId._id,
-      userId: req.user._id,
-      action: 'ATTENDANCE_TIME_VERIFIED',
-      entityType: 'attendance',
-      entityId: attendance._id,
-      details: {
-        attendeeName: attendance.attendeeInfo.fullName,
-        durationMinutes,
-        requiredMinutes: meeting.timeVerification.minimumStayMinutes
-      },
-      ipAddress: req.ip,
-      userAgent: req.get('User-Agent')
-    });
-    
-    res.json({
-      success: true,
-      attendanceId: attendance._id,
-      status: attendance.status,
-      durationMinutes,
-      confidenceScore: attendance.verificationDetails.confidenceScore,
-      message: 'Attendance time-verified successfully'
-    });
-    
-  } catch (error) {
-    console.error('Time verification error:', error);
-    res.status(500).json({ error: 'Failed to verify attendance time' });
-  }
-});
-
-// ================= ENHANCED EXPORT APIs =================
-
-// Export all meetings as PDF
-app.get('/api/organization/meetings/export/pdf', authenticateToken, async (req, res) => {
-  try {
-    const { startDate, endDate, status } = req.query;
-    
-    const query = {
-      organizationId: req.user.organizationId._id
-    };
-    
-    if (startDate && endDate) {
-      query['schedule.startTime'] = {
-        $gte: new Date(startDate),
-        $lte: new Date(endDate)
-      };
-    }
-    
-    if (status) {
-      query.status = status;
-    }
-    
-    const meetings = await Meeting.find(query)
-      .populate('createdBy', 'fullName')
-      .sort({ 'schedule.startTime': -1 })
-      .lean();
-    
-    // Get attendance counts for each meeting
-    for (const meeting of meetings) {
-      const attendanceCount = await AttendanceRecord.countDocuments({
-        meetingId: meeting._id
-      });
-      meeting.attendanceCount = attendanceCount;
-    }
-    
-    const organization = await Organization.findById(req.user.organizationId._id);
-    
-    // Generate PDF
-    const pdfBuffer = await generateAllMeetingsPDF(
-      meetings, 
-      organization, 
-      startDate || new Date(0), 
-      endDate || new Date()
-    );
-    
-    await AuditLog.create({
-      organizationId: req.user.organizationId._id,
-      userId: req.user._id,
-      action: 'EXPORT_ALL_MEETINGS_PDF',
-      entityType: 'organization',
-      entityId: organization._id,
-      details: { 
-        meetingCount: meetings.length,
-        dateRange: { startDate, endDate }
-      },
-      ipAddress: req.ip,
-      userAgent: req.get('User-Agent')
-    });
-    
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="all-meetings-${moment().format('YYYY-MM-DD')}.pdf"`);
-    res.send(pdfBuffer);
-    
-  } catch (error) {
-    console.error('Export all meetings PDF error:', error);
-    res.status(500).json({ error: 'Failed to generate PDF' });
-  }
-});
-
-// Export all meetings as Excel
-app.get('/api/organization/meetings/export/excel', authenticateToken, async (req, res) => {
-  try {
-    const { startDate, endDate, status } = req.query;
-    
-    const query = {
-      organizationId: req.user.organizationId._id
-    };
-    
-    if (startDate && endDate) {
-      query['schedule.startTime'] = {
-        $gte: new Date(startDate),
-        $lte: new Date(endDate)
-      };
-    }
-    
-    if (status) {
-      query.status = status;
-    }
-    
-    const meetings = await Meeting.find(query)
-      .populate('createdBy', 'fullName')
-      .sort({ 'schedule.startTime': -1 })
-      .lean();
-    
-    const organization = await Organization.findById(req.user.organizationId._id);
-    
-    // Create workbook
-    const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet('All Meetings');
-    
-    // Header
-    worksheet.mergeCells('A1:H1');
-    worksheet.getCell('A1').value = organization.name;
-    worksheet.getCell('A1').font = { size: 16, bold: true };
-    worksheet.getCell('A1').alignment = { horizontal: 'center' };
-    
-    worksheet.mergeCells('A2:H2');
-    worksheet.getCell('A2').value = 'All Meetings Report';
-    worksheet.getCell('A2').font = { size: 14, bold: true };
-    worksheet.getCell('A2').alignment = { horizontal: 'center' };
-    
-    // Date range
-    if (startDate && endDate) {
-      worksheet.mergeCells('A3:H3');
-      worksheet.getCell('A3').value = `Period: ${moment(startDate).format('MMM DD, YYYY')} to ${moment(endDate).format('MMM DD, YYYY')}`;
-      worksheet.getCell('A3').alignment = { horizontal: 'center' };
-    }
-    
-    // Table header
-    const headerRow = 5;
-    const headers = ['Title', 'Date', 'Time', 'Location', 'Status', 'Created By', 'Attendees', 'Duration'];
-    
-    headers.forEach((header, index) => {
-      const cell = worksheet.getCell(headerRow, index + 1);
-      cell.value = header;
-      cell.font = { bold: true };
-      cell.fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: 'FFE0E0E0' }
-      };
-      cell.border = {
-        top: { style: 'thin' },
-        left: { style: 'thin' },
-        bottom: { style: 'thin' },
-        right: { style: 'thin' }
-      };
-    });
-    
-    // Add meetings data
-    for (let i = 0; i < meetings.length; i++) {
-      const meeting = meetings[i];
-      const row = headerRow + i + 1;
-      
-      // Get attendance count
-      const attendanceCount = await AttendanceRecord.countDocuments({
-        meetingId: meeting._id
-      });
-      
-      // Calculate duration
-      const start = new Date(meeting.schedule.startTime);
-      const end = new Date(meeting.schedule.endTime);
-      const durationHours = Math.round((end - start) / (1000 * 60 * 60) * 10) / 10;
-      
-      worksheet.getCell(`A${row}`).value = meeting.title;
-      worksheet.getCell(`B${row}`).value = moment(meeting.schedule.startTime).format('YYYY-MM-DD');
-      worksheet.getCell(`C${row}`).value = moment(meeting.schedule.startTime).format('HH:mm');
-      worksheet.getCell(`D${row}`).value = meeting.location.name;
-      worksheet.getCell(`E${row}`).value = meeting.status.toUpperCase();
-      worksheet.getCell(`F${row}`).value = meeting.createdBy?.fullName || 'Unknown';
-      worksheet.getCell(`G${row}`).value = attendanceCount;
-      worksheet.getCell(`H${row}`).value = durationHours;
-      
-      // Color code status
-      const statusCell = worksheet.getCell(`E${row}`);
-      const statusColors = {
-        'draft': 'FFFFCC',
-        'active': 'CCFFCC',
-        'in_progress': '00FF00',
-        'completed': 'CCCCCC',
-        'cancelled': 'FFCCCC'
-      };
-      
-      statusCell.fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: statusColors[meeting.status] || 'FFFFFF' }
-      };
-      
-      // Add borders
-      for (let j = 1; j <= headers.length; j++) {
-        const cell = worksheet.getCell(row, j);
-        cell.border = {
-          top: { style: 'thin' },
-          left: { style: 'thin' },
-          bottom: { style: 'thin' },
-          right: { style: 'thin' }
-        };
-      }
-    }
-    
-    // Auto fit columns
-    worksheet.columns.forEach(column => {
-      let maxLength = 0;
-      column.eachCell({ includeEmpty: true }, cell => {
-        const columnLength = cell.value ? cell.value.toString().length : 10;
-        if (columnLength > maxLength) {
-          maxLength = columnLength;
-        }
-      });
-      column.width = Math.min(maxLength + 2, 30);
-    });
-    
-    // Generate buffer
-    const buffer = await workbook.xlsx.writeBuffer();
-    
-    await AuditLog.create({
-      organizationId: req.user.organizationId._id,
-      userId: req.user._id,
-      action: 'EXPORT_ALL_MEETINGS_EXCEL',
-      entityType: 'organization',
-      entityId: organization._id,
-      details: { meetingCount: meetings.length },
-      ipAddress: req.ip,
-      userAgent: req.get('User-Agent')
-    });
-    
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', `attachment; filename="all-meetings-${moment().format('YYYY-MM-DD')}.xlsx"`);
-    res.send(buffer);
-    
-  } catch (error) {
-    console.error('Export all meetings Excel error:', error);
-    res.status(500).json({ error: 'Failed to generate Excel' });
-  }
-});
-
 // 6. Export Routes
 app.get('/api/meetings/:meetingId/export/pdf', authenticateToken, async (req, res) => {
   try {
@@ -4520,6 +4656,38 @@ app.get('/api/meetings/:meetingId/export/excel', authenticateToken, async (req, 
     res.status(500).json({ error: 'Failed to generate Excel' });
   }
 });
+
+// Add this middleware function after other middleware (around line 400)
+const trackAttendanceJoin = async (req, res, next) => {
+  const originalSend = res.send;
+  
+  res.send = function(data) {
+    try {
+      // Check if this is an attendance endpoint
+      if (req.path.includes('/api/attend/') && res.statusCode === 201) {
+        const response = JSON.parse(data);
+        
+        // Emit socket event or log to real-time system
+        if (response.attendanceId) {
+          // In a real implementation, you would emit to WebSocket/Socket.io
+          console.log(`New attendance: ${response.attendanceId}`);
+          
+          // You could also update a Redis cache for real-time dashboards
+        }
+      }
+    } catch (error) {
+      // Don't break the response if tracking fails
+      console.error('Attendance tracking error:', error);
+    }
+    
+    originalSend.call(this, data);
+  };
+  
+  next();
+};
+
+// Apply the middleware to attendance routes
+app.use('/api/attend', trackAttendanceJoin);
 
 // 7. Admin Management Routes
 app.get('/api/admins', authenticateToken, isSuperAdmin, async (req, res) => {
@@ -4860,6 +5028,8 @@ app.get('/api/audit-logs', authenticateToken, async (req, res) => {
   }
 });
 
+// Add these routes after line 1350
+
 // ================= PWA SUPPORT APIs =================
 
 // Get PWA manifest for meeting
@@ -4931,7 +5101,7 @@ app.post('/api/pwa/register-device', async (req, res) => {
       return res.status(404).json({ error: 'Meeting not found' });
     }
     
-    // Store device registration
+    // Store device registration (you might want to create a separate collection for this)
     await DeviceFingerprint.findOneAndUpdate(
       { deviceId, organizationId: meeting.organizationId },
       {
@@ -5104,6 +5274,8 @@ app.post('/api/location/test', async (req, res) => {
   }
 });
 
+// Add this route for real-time attendance monitoring
+
 // Get live attendance feed (SSE - Server-Sent Events)
 app.get('/api/meetings/:meetingId/live', authenticateToken, async (req, res) => {
   try {
@@ -5189,6 +5361,51 @@ app.get('/api/meetings/:meetingId/live', authenticateToken, async (req, res) => 
   }
 });
 
+// Add this helper function for geohash generation
+const generateGeohash = (latitude, longitude, precision = 9) => {
+  // Simple geohash implementation (in production, use a proper geohash library)
+  const base32 = '0123456789bcdefghjkmnpqrstuvwxyz';
+  let hash = '';
+  let bits = 0;
+  let bit = 0;
+  
+  let latMin = -90, latMax = 90;
+  let lonMin = -180, lonMax = 180;
+  
+  while (hash.length < precision) {
+    if (bits % 2 === 0) {
+      // Even bit: bisect longitude
+      const lonMid = (lonMin + lonMax) / 2;
+      if (longitude < lonMid) {
+        bit = bit << 1;
+        lonMax = lonMid;
+      } else {
+        bit = (bit << 1) | 1;
+        lonMin = lonMid;
+      }
+    } else {
+      // Odd bit: bisect latitude
+      const latMid = (latMin + latMax) / 2;
+      if (latitude < latMid) {
+        bit = bit << 1;
+        latMax = latMid;
+      } else {
+        bit = (bit << 1) | 1;
+        latMin = latMid;
+      }
+    }
+    
+    bits++;
+    
+    if (bits % 5 === 0) {
+      hash += base32[bit];
+      bit = 0;
+    }
+  }
+  
+  return hash;
+};
+
 // 10. Health Check
 app.get('/api/health', (req, res) => {
   res.json({
@@ -5200,35 +5417,6 @@ app.get('/api/health', (req, res) => {
     }
   });
 });
-
-// Middleware for tracking attendance joins
-const trackAttendanceJoin = async (req, res, next) => {
-  const originalSend = res.send;
-  
-  res.send = function(data) {
-    try {
-      // Check if this is an attendance endpoint
-      if (req.path.includes('/api/attend/') && res.statusCode === 201) {
-        const response = JSON.parse(data);
-        
-        // Emit socket event or log to real-time system
-        if (response.attendanceId) {
-          console.log(`New attendance: ${response.attendanceId}`);
-        }
-      }
-    } catch (error) {
-      // Don't break the response if tracking fails
-      console.error('Attendance tracking error:', error);
-    }
-    
-    originalSend.call(this, data);
-  };
-  
-  next();
-};
-
-// Apply the middleware to attendance routes
-app.use('/api/attend', trackAttendanceJoin);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
