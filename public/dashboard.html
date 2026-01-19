@@ -1,0 +1,2639 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - GSAMS</title>
+
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        :root {
+            --primary-color: #4361ee;
+            --secondary-color: #3f37c9;
+            --success-color: #4cc9f0;
+            --danger-color: #f72585;
+            --dark-color: #212529;
+            --light-color: #f8f9fa;
+            --border-radius: 12px;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Poppins', sans-serif;
+            background-color: #f5f6fa;
+            overflow-x: hidden;
+        }
+
+        /* Sidebar Styles */
+        .sidebar {
+            background: white;
+            min-height: 100vh;
+            width: 260px;
+            position: fixed;
+            top: 0;
+            left: 0;
+            z-index: 1000;
+            box-shadow: 2px 0 10px rgba(0, 0, 0, 0.05);
+            transition: transform 0.3s ease;
+        }
+
+        .sidebar-header {
+            padding: 1.5rem;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .sidebar-logo {
+            font-weight: 700;
+            font-size: 1.5rem;
+            color: var(--primary-color);
+        }
+
+        .sidebar-menu {
+            padding: 1.5rem 0;
+        }
+
+        .sidebar-item {
+            padding: 0.8rem 1.5rem;
+            display: flex;
+            align-items: center;
+            color: #6c757d;
+            text-decoration: none;
+            transition: all 0.3s ease;
+            border-left: 3px solid transparent;
+            cursor: pointer;
+        }
+
+        .sidebar-item:hover, .sidebar-item.active {
+            background-color: #f0f4ff;
+            color: var(--primary-color);
+            border-left-color: var(--primary-color);
+        }
+
+        .sidebar-item i {
+            width: 20px;
+            margin-right: 10px;
+        }
+
+        .sidebar-close {
+            display: none;
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            color: #6c757d;
+            cursor: pointer;
+        }
+
+        /* Main Content */
+        .main-content {
+            margin-left: 260px;
+            padding: 2rem;
+            min-height: 100vh;
+            transition: margin-left 0.3s ease;
+        }
+
+        /* Top Bar */
+        .top-bar {
+            background: white;
+            padding: 1rem 1.5rem;
+            border-radius: var(--border-radius);
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+            margin-bottom: 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .toggle-sidebar {
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            color: var(--dark-color);
+            cursor: pointer;
+            padding: 0.5rem;
+        }
+
+        .page-title {
+            font-weight: 600;
+            margin-bottom: 0;
+        }
+
+        .user-menu {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .user-avatar {
+            width: 45px;
+            height: 45px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+        }
+
+        /* Stats Cards */
+        .stats-card {
+            background: white;
+            border-radius: var(--border-radius);
+            padding: 1.5rem;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+            transition: transform 0.3s ease;
+        }
+
+        .stats-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .stats-icon {
+            width: 60px;
+            height: 60px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .stats-number {
+            font-size: 2rem;
+            font-weight: 700;
+            margin: 0.5rem 0;
+            color: var(--dark-color);
+        }
+
+        .stats-title {
+            color: #6c757d;
+            font-size: 0.9rem;
+            margin-bottom: 0;
+        }
+
+        /* Tables */
+        .table-container {
+            background: white;
+            border-radius: var(--border-radius);
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+            overflow: hidden;
+        }
+
+        .table-header {
+            padding: 1.5rem;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .table {
+            margin-bottom: 0;
+        }
+
+        .table thead th {
+            background-color: #f8f9fa;
+            border: none;
+            font-weight: 600;
+            padding: 1rem 1.5rem;
+        }
+
+        .table tbody td {
+            padding: 1rem 1.5rem;
+            vertical-align: middle;
+        }
+
+        /* Buttons */
+        .btn-primary-custom {
+            background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+            color: white;
+            border: none;
+            padding: 0.6rem 1.5rem;
+            border-radius: 8px;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+
+        .btn-primary-custom:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(67, 97, 238, 0.3);
+            color: white;
+        }
+
+        .btn-outline-custom {
+            border: 2px solid var(--primary-color);
+            color: var(--primary-color);
+            background: transparent;
+            padding: 0.6rem 1.5rem;
+            border-radius: 8px;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+
+        .btn-outline-custom:hover {
+            background: var(--primary-color);
+            color: white;
+        }
+
+        /* Badge Styles */
+        .badge {
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            font-weight: 500;
+        }
+
+        /* Responsive */
+        @media (max-width: 992px) {
+            .sidebar {
+                transform: translateX(-100%);
+                width: 280px;
+            }
+
+            .sidebar.active {
+                transform: translateX(0);
+                box-shadow: 0 0 20px rgba(0, 0, 0, 0.1);
+            }
+
+            .sidebar-close {
+                display: block;
+            }
+
+            .main-content {
+                margin-left: 0;
+                padding: 1rem;
+            }
+
+            .stats-card {
+                margin-bottom: 1rem;
+            }
+        }
+
+        /* Sidebar Overlay */
+        .sidebar-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 999;
+        }
+
+        .sidebar-overlay.active {
+            display: block;
+        }
+
+        /* Dashboard Sections */
+        .dashboard-section {
+            display: none;
+        }
+
+        .dashboard-section.active {
+            display: block;
+        }
+
+        /* Loading Spinner */
+        .spinner-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            width: 100%;
+            background: white;
+            z-index: 9999;
+        }
+
+        /* QR Code Display */
+        .qr-code-display {
+            text-align: center;
+            padding: 2rem;
+        }
+
+        .qr-code-display img {
+            max-width: 300px;
+            border: 2px solid #eee;
+            border-radius: 8px;
+            padding: 1rem;
+        }
+
+        /* Meeting Link Display */
+        .meeting-link-box {
+            background: #f8f9fa;
+            padding: 1rem;
+            border-radius: 8px;
+            margin: 1rem 0;
+            word-break: break-all;
+        }
+
+        .copy-btn {
+            cursor: pointer;
+        }
+
+        /* Action buttons */
+        .action-btn {
+            padding: 0.4rem 0.8rem;
+            margin: 0 0.2rem;
+            border-radius: 6px;
+            border: none;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .action-btn:hover {
+            transform: scale(1.1);
+        }
+
+        /* Multi-step form styles */
+        .step-circle {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: #e0e0e0;
+            color: #6c757d;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+
+        .step-circle.active {
+            background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+            color: white;
+        }
+
+        .step-circle.completed {
+            background: var(--success-color);
+            color: white;
+        }
+
+        .meeting-step {
+            display: none;
+        }
+
+        .meeting-step.active {
+            display: block;
+        }
+
+        .custom-field-item {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        .custom-field-item:hover {
+            border-color: var(--primary-color);
+        }
+    </style>
+</head>
+<body>
+    <!-- Loading Spinner -->
+    <div id="loadingSpinner" class="spinner-container">
+        <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+    </div>
+
+    <!-- Sidebar Overlay -->
+    <div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebar()"></div>
+
+    <!-- Sidebar -->
+    <div class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <div class="sidebar-logo">
+                <i class="fas fa-map-marker-alt me-2"></i> GSAMS
+            </div>
+            <button class="sidebar-close" onclick="closeSidebar()">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+
+        <div class="sidebar-menu">
+            <a class="sidebar-item active" data-section="dashboard-home">
+                <i class="fas fa-home"></i> Dashboard
+            </a>
+            <a class="sidebar-item" data-section="meetings">
+                <i class="fas fa-calendar-alt"></i> Meetings
+            </a>
+            <a class="sidebar-item" data-section="attendance">
+                <i class="fas fa-user-check"></i> Attendance
+            </a>
+            <a class="sidebar-item" data-section="reports">
+                <i class="fas fa-chart-bar"></i> Reports
+            </a>
+            <a class="sidebar-item" data-section="admins">
+                <i class="fas fa-users-cog"></i> Admins
+            </a>
+            <a class="sidebar-item" data-section="settings">
+                <i class="fas fa-cog"></i> Settings
+            </a>
+            <a class="sidebar-item" data-section="audit-logs">
+                <i class="fas fa-clipboard-list"></i> Audit Logs
+            </a>
+
+            <div class="mt-5 px-3">
+                <hr>
+                <a class="sidebar-item" onclick="logout()">
+                    <i class="fas fa-sign-out-alt"></i> Logout
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="main-content" id="mainContent">
+        <!-- Top Bar -->
+        <div class="top-bar">
+            <div class="d-flex align-items-center">
+                <button class="toggle-sidebar me-3" id="toggleSidebar" onclick="toggleSidebar()">
+                    <i class="fas fa-bars"></i>
+                </button>
+                <h3 class="page-title" id="pageTitle">Dashboard</h3>
+            </div>
+
+            <div class="user-menu">
+                <div class="d-flex align-items-center">
+                    <div class="user-avatar me-2" id="userAvatar">JD</div>
+                    <div class="d-none d-md-block">
+                        <h6 class="mb-0" id="userName">John Doe</h6>
+                        <small class="text-muted" id="userRole">Super Admin</small>
+                    </div>
+                </div>
+                <div class="dropdown">
+                    <button class="btn btn-light btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                        <i class="fas fa-ellipsis-v"></i>
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        <li><a class="dropdown-item" href="#"><i class="fas fa-user me-2"></i> Profile</a></li>
+                        <li><a class="dropdown-item" href="#" onclick="showDashboardSection('settings')"><i class="fas fa-cog me-2"></i> Settings</a></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item" href="#" onclick="logout()"><i class="fas fa-sign-out-alt me-2"></i> Logout</a></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- Dashboard Content -->
+        <div id="dashboard-content">
+            <!-- Dashboard Home -->
+            <div id="dashboard-home" class="dashboard-section active">
+                <div class="row mb-4">
+                    <div class="col-xl-3 col-md-6 mb-4">
+                        <div class="stats-card">
+                            <div class="stats-icon bg-primary text-white">
+                                <i class="fas fa-calendar-alt"></i>
+                            </div>
+                            <h3 class="stats-number" id="totalMeetings">0</h3>
+                            <p class="stats-title">Total Meetings</p>
+                        </div>
+                    </div>
+                    <div class="col-xl-3 col-md-6 mb-4">
+                        <div class="stats-card">
+                            <div class="stats-icon bg-success text-white">
+                                <i class="fas fa-user-check"></i>
+                            </div>
+                            <h3 class="stats-number" id="activeMeetings">0</h3>
+                            <p class="stats-title">Active Meetings</p>
+                        </div>
+                    </div>
+                    <div class="col-xl-3 col-md-6 mb-4">
+                        <div class="stats-card">
+                            <div class="stats-icon bg-warning text-white">
+                                <i class="fas fa-users"></i>
+                            </div>
+                            <h3 class="stats-number" id="totalAttendance">0</h3>
+                            <p class="stats-title">Total Attendance</p>
+                        </div>
+                    </div>
+                    <div class="col-xl-3 col-md-6 mb-4">
+                        <div class="stats-card">
+                            <div class="stats-icon bg-danger text-white">
+                                <i class="fas fa-user-clock"></i>
+                            </div>
+                            <h3 class="stats-number" id="todayAttendance">0</h3>
+                            <p class="stats-title">Today's Attendance</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="col-lg-8 mb-4">
+                        <div class="table-container">
+                            <div class="table-header">
+                                <h5 class="mb-0">Recent Attendance</h5>
+                                <a href="#" class="btn btn-sm btn-outline-custom" onclick="showDashboardSection('attendance')">View All</a>
+                            </div>
+                            <div class="table-responsive">
+                                <table class="table table-hover mb-0">
+                                    <thead>
+                                        <tr>
+                                            <th>Name</th>
+                                            <th>Meeting</th>
+                                            <th>Method</th>
+                                            <th>Time</th>
+                                            <th>Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="recentAttendance">
+                                        <tr>
+                                            <td colspan="5" class="text-center text-muted">Loading...</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="col-lg-4 mb-4">
+                        <div class="table-container">
+                            <div class="table-header">
+                                <h5 class="mb-0">Attendance by Type</h5>
+                            </div>
+                            <div class="p-3">
+                                <canvas id="attendanceChart" height="250"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="col-12">
+                        <div class="table-container">
+                            <div class="table-header">
+                                <h5 class="mb-0">Upcoming Meetings</h5>
+                                <button class="btn btn-sm btn-primary-custom" data-bs-toggle="modal" data-bs-target="#createMeetingModal">
+                                    <i class="fas fa-plus me-1"></i> New Meeting
+                                </button>
+                            </div>
+                            <div class="table-responsive">
+                                <table class="table table-hover mb-0">
+                                    <thead>
+                                        <tr>
+                                            <th>Title</th>
+                                            <th>Date & Time</th>
+                                            <th>Location</th>
+                                            <th>Status</th>
+                                            <th>Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="upcomingMeetings">
+                                        <tr>
+                                            <td colspan="5" class="text-center text-muted">Loading...</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Meetings Section -->
+            <div id="meetings" class="dashboard-section">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <h4>Meetings Management</h4>
+                    <button class="btn btn-primary-custom" data-bs-toggle="modal" data-bs-target="#createMeetingModal">
+                        <i class="fas fa-plus me-2"></i> Create New Meeting
+                    </button>
+                </div>
+
+                <div class="row mb-4">
+                    <div class="col-md-3 mb-3">
+                        <select class="form-select" id="meetingStatusFilter">
+                            <option value="">All Status</option>
+                            <option value="draft">Draft</option>
+                            <option value="active">Active</option>
+                            <option value="in_progress">In Progress</option>
+                            <option value="completed">Completed</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <button class="btn btn-primary-custom w-100" onclick="loadMeetings()">
+                            <i class="fas fa-filter me-2"></i> Filter
+                        </button>
+                    </div>
+                </div>
+
+                <div class="table-container">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Title</th>
+                                    <th>Date & Time</th>
+                                    <th>Location</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="meetingsTable">
+                                <tr>
+                                    <td colspan="5" class="text-center text-muted">Loading...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Attendance Section -->
+            <div id="attendance" class="dashboard-section">
+                <h4 class="mb-4">Attendance Records</h4>
+
+                <div class="row mb-4">
+                    <div class="col-md-4 mb-3">
+                        <select class="form-select" id="attendanceMeetingFilter">
+                            <option value="">All Meetings</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <select class="form-select" id="attendanceStatusFilter">
+                            <option value="">All Status</option>
+                            <option value="pending">Pending</option>
+                            <option value="verified">Verified</option>
+                            <option value="flagged">Flagged</option>
+                            <option value="rejected">Rejected</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <button class="btn btn-primary-custom w-100" onclick="loadAllAttendance()">
+                            <i class="fas fa-filter me-2"></i> Filter
+                        </button>
+                    </div>
+                </div>
+
+                <div class="table-container">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Meeting</th>
+                                    <th>Method</th>
+                                    <th>Check-in Time</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="attendanceTable">
+                                <tr>
+                                    <td colspan="6" class="text-center text-muted">Loading...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Reports Section -->
+            <div id="reports" class="dashboard-section">
+                <h4 class="mb-4">Reports & Analytics</h4>
+
+                <div class="row">
+                    <div class="col-md-6 mb-4">
+                        <div class="table-container">
+                            <div class="table-header">
+                                <h5 class="mb-0">Export All Meetings</h5>
+                            </div>
+                            <div class="p-4 text-center">
+                                <div class="mb-4">
+                                    <i class="fas fa-file-pdf fa-3x text-danger mb-3"></i>
+                                    <h5>Export to PDF</h5>
+                                    <p class="text-muted">Generate professional PDF reports</p>
+                                    <button class="btn btn-outline-danger" onclick="exportAllReports('pdf')">
+                                        <i class="fas fa-download me-2"></i> Download PDF
+                                    </button>
+                                </div>
+                                <hr>
+                                <div>
+                                    <i class="fas fa-file-excel fa-3x text-success mb-3"></i>
+                                    <h5>Export to Excel</h5>
+                                    <p class="text-muted">Export data to Excel</p>
+                                    <button class="btn btn-outline-success" onclick="exportAllReports('excel')">
+                                        <i class="fas fa-download me-2"></i> Download Excel
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="col-md-6 mb-4">
+                        <div class="table-container">
+                            <div class="table-header">
+                                <h5 class="mb-0">Meeting-Specific Reports</h5>
+                            </div>
+                            <div class="p-4">
+                                <div class="mb-3">
+                                    <label class="form-label">Select Meeting</label>
+                                    <select class="form-select" id="reportMeetingSelect">
+                                        <option value="">Select a meeting...</option>
+                                    </select>
+                                </div>
+                                <div class="d-grid gap-2">
+                                    <button class="btn btn-outline-danger" onclick="exportMeetingReport('pdf')">
+                                        <i class="fas fa-file-pdf me-2"></i> Export Meeting as PDF
+                                    </button>
+                                    <button class="btn btn-outline-success" onclick="exportMeetingReport('excel')">
+                                        <i class="fas fa-file-excel me-2"></i> Export Meeting as Excel
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Admins Section -->
+            <div id="admins" class="dashboard-section">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <h4>Admin Management</h4>
+                    <button class="btn btn-primary-custom" data-bs-toggle="modal" data-bs-target="#createAdminModal">
+                        <i class="fas fa-user-plus me-2"></i> Add Admin
+                    </button>
+                </div>
+
+                <div class="table-container">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Email</th>
+                                    <th>Phone</th>
+                                    <th>Role</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="adminsTable">
+                                <tr>
+                                    <td colspan="6" class="text-center text-muted">Loading...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Settings Section -->
+            <div id="settings" class="dashboard-section">
+                <h4 class="mb-4">Organization Settings</h4>
+
+                <div class="row">
+                    <div class="col-lg-8">
+                        <div class="table-container">
+                            <div class="table-header">
+                                <h5 class="mb-0">Attendance Settings</h5>
+                            </div>
+                            <div class="p-4">
+                                <form id="settingsForm" onsubmit="saveSettings(event)">
+                                    <div class="mb-3">
+                                        <label class="form-label">Default Location Radius (meters)</label>
+                                        <input type="number" class="form-control" id="defaultRadius" value="100" min="10" max="1000">
+                                    </div>
+
+                                    <div class="mb-3">
+                                        <label class="form-label">Default Time Window (minutes)</label>
+                                        <input type="number" class="form-control" id="defaultTimeWindow" value="30" min="5" max="120">
+                                    </div>
+
+                                    <div class="mb-3">
+                                        <label class="form-label fw-bold">Allowed Attendance Methods</label>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" id="allowGPS" checked>
+                                            <label class="form-check-label" for="allowGPS">GPS</label>
+                                        </div>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" id="allowSMS" checked>
+                                            <label class="form-check-label" for="allowSMS">SMS</label>
+                                        </div>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" id="allowUSSD" checked>
+                                            <label class="form-check-label" for="allowUSSD">USSD</label>
+                                        </div>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" id="allowKiosk" checked>
+                                            <label class="form-check-label" for="allowKiosk">Kiosk</label>
+                                        </div>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" id="allowManual" checked>
+                                            <label class="form-check-label" for="allowManual">Manual</label>
+                                        </div>
+                                    </div>
+
+                                    <button type="submit" class="btn btn-primary-custom">
+                                        <i class="fas fa-save me-2"></i> Save Settings
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="col-lg-4">
+                        <div class="table-container">
+                            <div class="table-header">
+                                <h5 class="mb-0">Organization Info</h5>
+                            </div>
+                            <div class="p-4">
+                                <div class="mb-3">
+                                    <label class="form-label">Organization Name</label>
+                                    <p class="fw-bold" id="orgName">Loading...</p>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">Status</label>
+                                    <span class="badge bg-success" id="orgStatus">Active</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Audit Logs Section -->
+            <div id="audit-logs" class="dashboard-section">
+                <h4 class="mb-4">Audit Logs</h4>
+
+                <div class="table-container">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Timestamp</th>
+                                    <th>User</th>
+                                    <th>Action</th>
+                                    <th>Details</th>
+                                </tr>
+                            </thead>
+                            <tbody id="auditLogsTable">
+                                <tr>
+                                    <td colspan="4" class="text-center text-muted">Loading...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create Meeting Modal -->
+    <div class="modal fade" id="createMeetingModal" tabindex="-1">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Create New Meeting - <span id="stepTitle">Step 1: Basic Information</span></h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <!-- Progress Steps -->
+                    <div class="mb-4">
+                        <div class="d-flex justify-content-between">
+                            <div class="text-center flex-fill" id="step1Indicator">
+                                <div class="step-circle active">1</div>
+                                <small>Basic Info</small>
+                            </div>
+                            <div class="text-center flex-fill" id="step2Indicator">
+                                <div class="step-circle">2</div>
+                                <small>Custom Form</small>
+                            </div>
+                            <div class="text-center flex-fill" id="step3Indicator">
+                                <div class="step-circle">3</div>
+                                <small>Review</small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Step 1: Basic Information -->
+                    <div id="step1" class="meeting-step active">
+                        <form id="createMeetingForm">
+                            <div class="mb-3">
+                                <label class="form-label">Meeting Title *</label>
+                                <input type="text" class="form-control" id="meetingTitle" required>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Description</label>
+                                <textarea class="form-control" id="meetingDescription" rows="3"></textarea>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">Start Date & Time *</label>
+                                    <input type="datetime-local" class="form-control" id="meetingStartTime" required>
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">End Date & Time *</label>
+                                    <input type="datetime-local" class="form-control" id="meetingEndTime" required>
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Location Name *</label>
+                                <input type="text" class="form-control" id="meetingLocationName" required>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">Latitude *</label>
+                                    <input type="number" step="any" class="form-control" id="meetingLatitude" required>
+                                    <small class="text-muted">Example: 6.5244</small>
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">Longitude *</label>
+                                    <input type="number" step="any" class="form-control" id="meetingLongitude" required>
+                                    <small class="text-muted">Example: 3.3792</small>
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Allowed Radius (meters) *</label>
+                                <input type="number" class="form-control" id="meetingRadius" value="100" min="10" required>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label fw-bold">Allowed Attendance Modes</label>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="allowSmartphoneGPS" checked>
+                                    <label class="form-check-label" for="allowSmartphoneGPS">Smartphone GPS</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="allowSMSMode" checked>
+                                    <label class="form-check-label" for="allowSMSMode">SMS</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="allowUSSDMode" checked>
+                                    <label class="form-check-label" for="allowUSSDMode">USSD</label>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+
+                    <!-- Step 2: Custom Form Builder -->
+                    <div id="step2" class="meeting-step" style="display: none;">
+                        <div class="alert alert-info">
+                            <i class="fas fa-info-circle me-2"></i>
+                            Create custom form fields that attendees will fill when marking attendance.
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Default Required Fields</label>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="requireFullName" checked disabled>
+                                <label class="form-check-label" for="requireFullName">Full Name (Always required)</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="requireEmail" checked>
+                                <label class="form-check-label" for="requireEmail">Email Address</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="requirePhone" checked>
+                                <label class="form-check-label" for="requirePhone">Phone Number</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="requireIdNumber">
+                                <label class="form-check-label" for="requireIdNumber">ID Number</label>
+                            </div>
+                        </div>
+
+                        <hr>
+
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Custom Fields</label>
+                            <button type="button" class="btn btn-sm btn-primary-custom" id="addCustomFieldBtn">
+                                <i class="fas fa-plus me-2"></i> Add Custom Field
+                            </button>
+                        </div>
+
+                        <div id="customFieldsList">
+                            <!-- Custom fields will be added here -->
+                        </div>
+                    </div>
+
+                    <!-- Step 3: Review -->
+                    <div id="step3" class="meeting-step" style="display: none;">
+                        <div class="alert alert-success">
+                            <i class="fas fa-check-circle me-2"></i>
+                            Review your meeting details before creating.
+                        </div>
+
+                        <div id="reviewContent">
+                            <!-- Review content will be populated here -->
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-outline-custom" id="prevBtn" style="display: none;">
+                        <i class="fas fa-arrow-left me-2"></i> Previous
+                    </button>
+                    <button type="button" class="btn btn-primary-custom" id="nextBtn">
+                        Next <i class="fas fa-arrow-right ms-2"></i>
+                    </button>
+                    <button type="button" class="btn btn-primary-custom" id="createBtn" style="display: none;">
+                        <i class="fas fa-save me-2"></i> Create Meeting
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- View Meeting Details Modal -->
+    <div class="modal fade" id="viewMeetingModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Meeting Details</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="meetingDetailsContent">
+                    <p class="text-center">Loading...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create Admin Modal -->
+    <div class="modal fade" id="createAdminModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Add New Admin</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="createAdminForm">
+                        <div class="mb-3">
+                            <label class="form-label">Full Name *</label>
+                            <input type="text" class="form-control" id="adminFullName" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Email *</label>
+                            <input type="email" class="form-control" id="adminEmail" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Phone</label>
+                            <input type="tel" class="form-control" id="adminPhone">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Password *</label>
+                            <input type="password" class="form-control" id="adminPassword" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Role *</label>
+                            <select class="form-select" id="adminRole" required>
+                                <option value="admin">Admin</option>
+                                <option value="moderator">Moderator</option>
+                            </select>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary-custom" onclick="createAdmin()">
+                        <i class="fas fa-save me-2"></i> Add Admin
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+
+    <script>
+        const API_BASE_URL = window.location.origin + '/api';
+        const FRONTEND_URL = window.location.origin;
+        let authToken = '';
+        let currentUser = null;
+        let allMeetings = [];
+        let attendanceChart = null;
+
+        // Check authentication on page load
+        function checkAuth() {
+            authToken = localStorage.getItem('authToken');
+            if (!authToken) {
+                window.location.href = '/login.html';
+                return false;
+            }
+            return true;
+        }
+
+        // Load user info
+        function loadUserInfo() {
+            const user = JSON.parse(localStorage.getItem('user') || '{}');
+            currentUser = user;
+            if (user.fullName) {
+                document.getElementById('userName').textContent = user.fullName;
+                const initials = user.fullName.split(' ').map(n => n[0]).join('').toUpperCase();
+                document.getElementById('userAvatar').textContent = initials;
+            }
+            if (user.role) {
+                document.getElementById('userRole').textContent = user.role.replace('_', ' ').toUpperCase();
+            }
+        }
+
+        // Toggle sidebar on mobile
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('sidebarOverlay');
+            sidebar.classList.toggle('active');
+            overlay.classList.toggle('active');
+        }
+
+        function closeSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('sidebarOverlay');
+            sidebar.classList.remove('active');
+            overlay.classList.remove('active');
+        }
+
+        // Show dashboard section
+        function showDashboardSection(sectionId) {
+            // Remove active class from all sections
+            document.querySelectorAll('.dashboard-section').forEach(section => {
+                section.classList.remove('active');
+            });
+
+            // Remove active class from all sidebar items
+            document.querySelectorAll('.sidebar-item').forEach(item => {
+                item.classList.remove('active');
+            });
+
+            // Show selected section
+            const section = document.getElementById(sectionId);
+            if (section) {
+                section.classList.add('active');
+            }
+
+            // Activate corresponding sidebar item
+            document.querySelectorAll('.sidebar-item').forEach(item => {
+                if (item.getAttribute('data-section') === sectionId) {
+                    item.classList.add('active');
+                }
+            });
+
+            // Update page title
+            const titles = {
+                'dashboard-home': 'Dashboard',
+                'meetings': 'Meetings',
+                'attendance': 'Attendance Records',
+                'reports': 'Reports & Analytics',
+                'admins': 'Admin Management',
+                'settings': 'Settings',
+                'audit-logs': 'Audit Logs'
+            };
+            document.getElementById('pageTitle').textContent = titles[sectionId] || 'Dashboard';
+
+            // Load section-specific data
+            switch(sectionId) {
+                case 'dashboard-home':
+                    loadDashboardData();
+                    break;
+                case 'meetings':
+                    loadMeetings();
+                    break;
+                case 'attendance':
+                    loadAllAttendance();
+                    loadMeetingsForFilter();
+                    break;
+                case 'reports':
+                    loadMeetingsForReports();
+                    break;
+                case 'admins':
+                    loadAdmins();
+                    break;
+                case 'settings':
+                    loadSettings();
+                    break;
+                case 'audit-logs':
+                    loadAuditLogs();
+                    break;
+            }
+
+            // Close sidebar on mobile
+            if (window.innerWidth < 992) {
+                closeSidebar();
+            }
+        }
+
+        // Logout function
+        function logout() {
+            localStorage.removeItem('authToken');
+            localStorage.removeItem('user');
+            window.location.href = '/login.html';
+        }
+
+        // Load dashboard data
+        async function loadDashboardData() {
+            try {
+                // Load statistics
+                const statsResponse = await fetch(`${API_BASE_URL}/dashboard/stats`, {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+
+                if (statsResponse.ok) {
+                    const stats = await statsResponse.json();
+                    document.getElementById('totalMeetings').textContent = stats.totalMeetings || 0;
+                    document.getElementById('activeMeetings').textContent = stats.activeMeetings || 0;
+                    document.getElementById('totalAttendance').textContent = stats.totalAttendance || 0;
+                    document.getElementById('todayAttendance').textContent = stats.todayAttendance || 0;
+                }
+
+                // Load upcoming meetings
+                await loadUpcomingMeetings();
+
+                // Initialize chart
+                initializeChart();
+            } catch (error) {
+                console.error('Error loading dashboard data:', error);
+            }
+        }
+
+        // Load upcoming meetings
+        async function loadUpcomingMeetings() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/meetings?status=active`, {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+
+                if (response.ok) {
+                    const meetings = await response.json();
+                    displayUpcomingMeetings(meetings.slice(0, 5));
+
+                    // Also load recent attendance if we have meetings
+                    if (meetings.length > 0) {
+                        loadRecentAttendance(meetings[0]._id);
+                    }
+                }
+            } catch (error) {
+                console.error('Error loading upcoming meetings:', error);
+            }
+        }
+
+        // Display upcoming meetings
+        function displayUpcomingMeetings(meetings) {
+            const tbody = document.getElementById('upcomingMeetings');
+            if (!meetings || meetings.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">No upcoming meetings</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = meetings.map(meeting => `
+                <tr>
+                    <td>${meeting.title}</td>
+                    <td>${new Date(meeting.schedule.startTime).toLocaleString()}</td>
+                    <td>${meeting.location?.name || 'N/A'}</td>
+                    <td><span class="badge bg-${getStatusColor(meeting.status)}">${meeting.status}</span></td>
+                    <td>
+                        <button class="btn btn-sm btn-info action-btn" onclick="viewMeetingDetails('${meeting._id}')" title="View Details">
+                            <i class="fas fa-eye"></i>
+                        </button>
+                        <button class="btn btn-sm btn-primary action-btn" onclick="copyMeetingLink('${meeting.publicCode}')" title="Copy Link">
+                            <i class="fas fa-link"></i>
+                        </button>
+                        <button class="btn btn-sm btn-success action-btn" onclick="viewQRCode('${meeting._id}')" title="QR Code">
+                            <i class="fas fa-qrcode"></i>
+                        </button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        // Load recent attendance
+        async function loadRecentAttendance(meetingId) {
+            try {
+                const response = await fetch(`${API_BASE_URL}/meetings/${meetingId}/attendance`, {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+
+                if (response.ok) {
+                    const records = await response.json();
+                    displayRecentAttendance(records.slice(0, 5));
+                }
+            } catch (error) {
+                console.error('Error loading recent attendance:', error);
+            }
+        }
+
+        // Display recent attendance
+        function displayRecentAttendance(records) {
+            const tbody = document.getElementById('recentAttendance');
+            if (!records || records.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">No recent attendance records</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = records.map(record => `
+                <tr>
+                    <td>${record.attendeeInfo?.fullName || 'N/A'}</td>
+                    <td>${record.meeting?.title || 'N/A'}</td>
+                    <td><span class="badge bg-info">${record.verificationType || 'N/A'}</span></td>
+                    <td>${new Date(record.checkInTime).toLocaleString()}</td>
+                    <td><span class="badge bg-${getStatusColor(record.verificationStatus)}">${record.verificationStatus}</span></td>
+                </tr>
+            `).join('');
+        }
+
+        // Initialize attendance chart
+        function initializeChart() {
+            const ctx = document.getElementById('attendanceChart');
+            if (!ctx) return;
+
+            if (attendanceChart) {
+                attendanceChart.destroy();
+            }
+
+            attendanceChart = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['GPS', 'SMS', 'USSD', 'Kiosk', 'Manual'],
+                    datasets: [{
+                        data: [45, 20, 15, 12, 8],
+                        backgroundColor: [
+                            '#4361ee',
+                            '#4cc9f0',
+                            '#f72585',
+                            '#ffc107',
+                            '#28a745'
+                        ]
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom'
+                        }
+                    }
+                }
+            });
+        }
+
+        // Load all meetings
+        async function loadMeetings() {
+            try {
+                const statusFilter = document.getElementById('meetingStatusFilter')?.value || '';
+                const url = statusFilter ? `${API_BASE_URL}/meetings?status=${statusFilter}` : `${API_BASE_URL}/meetings`;
+
+                const response = await fetch(url, {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+
+                if (response.ok) {
+                    allMeetings = await response.json();
+                    displayMeetings(allMeetings);
+                }
+            } catch (error) {
+                console.error('Error loading meetings:', error);
+                showAlert('Error loading meetings', 'danger');
+            }
+        }
+
+        // Display meetings
+        function displayMeetings(meetings) {
+            const tbody = document.getElementById('meetingsTable');
+            if (!meetings || meetings.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">No meetings found</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = meetings.map(meeting => `
+                <tr>
+                    <td>${meeting.title}</td>
+                    <td>${new Date(meeting.schedule.startTime).toLocaleString()}</td>
+                    <td>${meeting.location?.name || 'N/A'}</td>
+                    <td><span class="badge bg-${getStatusColor(meeting.status)}">${meeting.status}</span></td>
+                    <td>
+                        <button class="btn btn-sm btn-info action-btn view-meeting-btn" data-meeting-id="${meeting._id}" title="View Details">
+                            <i class="fas fa-eye"></i>
+                        </button>
+                        <button class="btn btn-sm btn-primary action-btn copy-link-btn" data-public-code="${meeting.accessCodes?.publicCode || ''}" title="Copy Link">
+                            <i class="fas fa-link"></i>
+                        </button>
+                        <button class="btn btn-sm btn-success action-btn qr-code-btn" data-meeting-id="${meeting._id}" title="QR Code">
+                            <i class="fas fa-qrcode"></i>
+                        </button>
+                        <button class="btn btn-sm btn-warning action-btn view-attendance-btn" data-meeting-id="${meeting._id}" title="View Attendance">
+                            <i class="fas fa-users"></i>
+                        </button>
+                        ${meeting.status === 'draft' ? `<button class="btn btn-sm btn-success action-btn activate-meeting-btn" data-meeting-id="${meeting._id}" title="Activate"><i class="fas fa-play"></i></button>` : ''}
+                        ${meeting.status === 'active' ? `<button class="btn btn-sm btn-danger action-btn end-meeting-btn" data-meeting-id="${meeting._id}" title="End Meeting"><i class="fas fa-stop"></i></button>` : ''}
+                        <button class="btn btn-sm btn-danger action-btn delete-meeting-btn" data-meeting-id="${meeting._id}" title="Delete Meeting">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        // Multi-step form management
+        let currentStep = 1;
+        let customFieldsData = [];
+
+        function resetMeetingModal() {
+            console.log('resetMeetingModal called');
+            currentStep = 1;
+            customFieldsData = [];
+            document.getElementById('customFieldsList').innerHTML = '';
+
+            // Reset the form
+            const form = document.getElementById('createMeetingForm');
+            if (form) form.reset();
+
+            // Reset default field checkboxes
+            document.getElementById('requireEmail').checked = true;
+            document.getElementById('requirePhone').checked = true;
+            document.getElementById('requireIdNumber').checked = false;
+
+            // Reset attendance mode checkboxes
+            document.getElementById('allowSmartphoneGPS').checked = true;
+            document.getElementById('allowSMSMode').checked = true;
+            document.getElementById('allowUSSDMode').checked = true;
+
+            // Set default radius
+            document.getElementById('meetingRadius').value = 100;
+
+            showStep(1);
+        }
+
+        function showStep(step) {
+            currentStep = step;
+            console.log('showStep called with step:', step);
+
+            // Hide all steps - remove class and set inline style
+            document.querySelectorAll('.meeting-step').forEach(el => {
+                el.classList.remove('active');
+                el.style.display = 'none';
+            });
+
+            // Show current step - add class and set inline style
+            const currentStepElement = document.getElementById(`step${step}`);
+            currentStepElement.classList.add('active');
+            currentStepElement.style.display = 'block';
+            console.log('Step element displayed:', currentStepElement);
+
+            // Update step indicators
+            for (let i = 1; i <= 3; i++) {
+                const circle = document.querySelector(`#step${i}Indicator .step-circle`);
+                if (i < step) {
+                    circle.classList.remove('active');
+                    circle.classList.add('completed');
+                    circle.innerHTML = '<i class="fas fa-check"></i>';
+                } else if (i === step) {
+                    circle.classList.add('active');
+                    circle.classList.remove('completed');
+                    circle.innerHTML = i;
+                } else {
+                    circle.classList.remove('active', 'completed');
+                    circle.innerHTML = i;
+                }
+            }
+
+            // Update buttons
+            document.getElementById('prevBtn').style.display = step === 1 ? 'none' : 'inline-block';
+            document.getElementById('nextBtn').style.display = step === 3 ? 'none' : 'inline-block';
+            document.getElementById('createBtn').style.display = step === 3 ? 'inline-block' : 'none';
+
+            // Update title
+            const titles = {
+                1: 'Step 1: Basic Information',
+                2: 'Step 2: Custom Form Builder',
+                3: 'Step 3: Review & Create'
+            };
+            document.getElementById('stepTitle').textContent = titles[step];
+
+            // If moving to step 3, populate review
+            if (step === 3) {
+                populateReview();
+            }
+        }
+
+        function nextStep() {
+            console.log('nextStep called, currentStep:', currentStep);
+
+            if (currentStep === 1) {
+                // Validate step 1 fields
+                const title = document.getElementById('meetingTitle').value.trim();
+                const startTime = document.getElementById('meetingStartTime').value;
+                const endTime = document.getElementById('meetingEndTime').value;
+                const locationName = document.getElementById('meetingLocationName').value.trim();
+                const latitude = document.getElementById('meetingLatitude').value;
+                const longitude = document.getElementById('meetingLongitude').value;
+                const radius = document.getElementById('meetingRadius').value;
+
+                console.log('Step 1 validation:', {title, startTime, endTime, locationName, latitude, longitude, radius});
+
+                // Check required fields
+                if (!title) {
+                    showAlert('Please enter a meeting title', 'warning');
+                    document.getElementById('meetingTitle').focus();
+                    return;
+                }
+
+                if (!startTime) {
+                    showAlert('Please select a start date and time', 'warning');
+                    document.getElementById('meetingStartTime').focus();
+                    return;
+                }
+
+                if (!endTime) {
+                    showAlert('Please select an end date and time', 'warning');
+                    document.getElementById('meetingEndTime').focus();
+                    return;
+                }
+
+                if (!locationName) {
+                    showAlert('Please enter a location name', 'warning');
+                    document.getElementById('meetingLocationName').focus();
+                    return;
+                }
+
+                if (!latitude || latitude === '') {
+                    showAlert('Please enter a latitude', 'warning');
+                    document.getElementById('meetingLatitude').focus();
+                    return;
+                }
+
+                if (!longitude || longitude === '') {
+                    showAlert('Please enter a longitude', 'warning');
+                    document.getElementById('meetingLongitude').focus();
+                    return;
+                }
+
+                if (!radius || radius === '') {
+                    showAlert('Please enter an allowed radius', 'warning');
+                    document.getElementById('meetingRadius').focus();
+                    return;
+                }
+
+                // Validate time range
+                const startDate = new Date(startTime);
+                const endDate = new Date(endTime);
+
+                if (startDate >= endDate) {
+                    showAlert('End time must be after start time', 'warning');
+                    document.getElementById('meetingEndTime').focus();
+                    return;
+                }
+
+                // Validate coordinates
+                const lat = parseFloat(latitude);
+                const lon = parseFloat(longitude);
+
+                if (isNaN(lat) || lat < -90 || lat > 90) {
+                    showAlert('Latitude must be between -90 and 90', 'warning');
+                    document.getElementById('meetingLatitude').focus();
+                    return;
+                }
+
+                if (isNaN(lon) || lon < -180 || lon > 180) {
+                    showAlert('Longitude must be between -180 and 180', 'warning');
+                    document.getElementById('meetingLongitude').focus();
+                    return;
+                }
+
+                console.log('Step 1 validation passed!');
+            }
+
+            if (currentStep < 3) {
+                console.log('Moving to step:', currentStep + 1);
+                showStep(currentStep + 1);
+            }
+        }
+
+        function previousStep() {
+            if (currentStep > 1) {
+                showStep(currentStep - 1);
+            }
+        }
+
+        // Custom field management
+        function addCustomField() {
+            const fieldId = 'customField' + Date.now();
+            const fieldHtml = `
+                <div class="custom-field-item" id="${fieldId}">
+                    <div class="row">
+                        <div class="col-md-4 mb-2">
+                            <label class="form-label">Field Label</label>
+                            <input type="text" class="form-control custom-field-label" placeholder="e.g., Department">
+                        </div>
+                        <div class="col-md-3 mb-2">
+                            <label class="form-label">Field Type</label>
+                            <select class="form-select custom-field-type">
+                                <option value="text">Text</option>
+                                <option value="email">Email</option>
+                                <option value="number">Number</option>
+                                <option value="tel">Phone</option>
+                                <option value="textarea">Long Text</option>
+                                <option value="select">Dropdown</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3 mb-2">
+                            <label class="form-label">Required</label>
+                            <select class="form-select custom-field-required">
+                                <option value="true">Yes</option>
+                                <option value="false">No</option>
+                            </select>
+                        </div>
+                        <div class="col-md-2 mb-2">
+                            <label class="form-label">&nbsp;</label>
+                            <button type="button" class="btn btn-danger w-100 remove-field-btn" data-field-id="${fieldId}">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="row options-row" style="display: none;">
+                        <div class="col-12 mb-2">
+                            <label class="form-label">Options (comma-separated)</label>
+                            <input type="text" class="form-control custom-field-options" placeholder="e.g., Sales, Marketing, IT">
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            document.getElementById('customFieldsList').insertAdjacentHTML('beforeend', fieldHtml);
+
+            // Add event listener to show options field when dropdown is selected
+            const fieldElement = document.getElementById(fieldId);
+            const typeSelect = fieldElement.querySelector('.custom-field-type');
+            typeSelect.addEventListener('change', function() {
+                const optionsRow = fieldElement.querySelector('.options-row');
+                optionsRow.style.display = this.value === 'select' ? 'block' : 'none';
+            });
+
+            // Add event listener to remove button
+            const removeBtn = fieldElement.querySelector('.remove-field-btn');
+            removeBtn.addEventListener('click', function() {
+                document.getElementById(fieldId).remove();
+            });
+        }
+
+        function getCustomFields() {
+            const fields = [];
+            document.querySelectorAll('.custom-field-item').forEach(item => {
+                const label = item.querySelector('.custom-field-label').value;
+                const type = item.querySelector('.custom-field-type').value;
+                const required = item.querySelector('.custom-field-required').value === 'true';
+                const options = item.querySelector('.custom-field-options')?.value;
+
+                if (label) {
+                    const field = {
+                        fieldName: label.toLowerCase().replace(/\s+/g, '_'),
+                        label: label,
+                        fieldType: type,
+                        required: required
+                    };
+
+                    if (type === 'select' && options) {
+                        field.options = options.split(',').map(o => o.trim()).filter(o => o);
+                    }
+
+                    fields.push(field);
+                }
+            });
+            return fields;
+        }
+
+        function populateReview() {
+            const title = document.getElementById('meetingTitle').value;
+            const description = document.getElementById('meetingDescription').value;
+            const startTime = new Date(document.getElementById('meetingStartTime').value).toLocaleString();
+            const endTime = new Date(document.getElementById('meetingEndTime').value).toLocaleString();
+            const locationName = document.getElementById('meetingLocationName').value;
+            const latitude = document.getElementById('meetingLatitude').value;
+            const longitude = document.getElementById('meetingLongitude').value;
+            const radius = document.getElementById('meetingRadius').value;
+
+            const requiredFields = [];
+            if (document.getElementById('requireEmail').checked) requiredFields.push('Email');
+            if (document.getElementById('requirePhone').checked) requiredFields.push('Phone');
+            if (document.getElementById('requireIdNumber').checked) requiredFields.push('ID Number');
+
+            const customFields = getCustomFields();
+
+            let reviewHtml = `
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6 class="fw-bold">Basic Information</h6>
+                        <p><strong>Title:</strong> ${title}</p>
+                        <p><strong>Description:</strong> ${description || 'N/A'}</p>
+                        <p><strong>Start:</strong> ${startTime}</p>
+                        <p><strong>End:</strong> ${endTime}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <h6 class="fw-bold">Location</h6>
+                        <p><strong>Name:</strong> ${locationName}</p>
+                        <p><strong>Coordinates:</strong> ${latitude}, ${longitude}</p>
+                        <p><strong>Radius:</strong> ${radius} meters</p>
+                    </div>
+                </div>
+                <hr>
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6 class="fw-bold">Required Fields</h6>
+                        <ul>
+                            <li>Full Name (Always required)</li>
+                            ${requiredFields.map(f => `<li>${f}</li>`).join('')}
+                        </ul>
+                    </div>
+                    <div class="col-md-6">
+                        <h6 class="fw-bold">Custom Fields (${customFields.length})</h6>
+                        ${customFields.length > 0 ? `
+                            <ul>
+                                ${customFields.map(f => `<li>${f.label} (${f.fieldType}) ${f.required ? '- Required' : ''}</li>`).join('')}
+                            </ul>
+                        ` : '<p class="text-muted">No custom fields added</p>'}
+                    </div>
+                </div>
+            `;
+
+            document.getElementById('reviewContent').innerHTML = reviewHtml;
+        }
+
+        // Create meeting
+        async function createMeeting() {
+            try {
+                // Disable button to prevent double submission
+                const createBtn = document.getElementById('createBtn');
+                createBtn.disabled = true;
+                createBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Creating...';
+
+                // Build required fields array in the format backend expects
+                const requiredFieldsArray = [{ field: 'fullName', isRequired: true }];
+                if (document.getElementById('requireEmail').checked) {
+                    requiredFieldsArray.push({ field: 'email', isRequired: true });
+                }
+                if (document.getElementById('requirePhone').checked) {
+                    requiredFieldsArray.push({ field: 'phone', isRequired: true });
+                }
+                if (document.getElementById('requireIdNumber').checked) {
+                    requiredFieldsArray.push({ field: 'idNumber', isRequired: true });
+                }
+
+                const customFields = getCustomFields();
+
+                const meetingData = {
+                    title: document.getElementById('meetingTitle').value,
+                    description: document.getElementById('meetingDescription').value,
+                    schedule: {
+                        startTime: document.getElementById('meetingStartTime').value,
+                        endTime: document.getElementById('meetingEndTime').value
+                    },
+                    location: {
+                        name: document.getElementById('meetingLocationName').value,
+                        latitude: parseFloat(document.getElementById('meetingLatitude').value),
+                        longitude: parseFloat(document.getElementById('meetingLongitude').value),
+                        radius: parseInt(document.getElementById('meetingRadius').value)
+                    },
+                    attendanceConfig: {
+                        allowedModes: {
+                            smartphoneGPS: document.getElementById('allowSmartphoneGPS').checked,
+                            sms: document.getElementById('allowSMSMode').checked,
+                            ussd: document.getElementById('allowUSSDMode').checked,
+                            kiosk: false,
+                            manual: false
+                        },
+                        requiredFields: requiredFieldsArray,
+                        verificationStrictness: 'medium',
+                        duplicatePrevention: {
+                            preventSameDevice: true,
+                            preventSamePhone: true,
+                            preventSameNameTime: true,
+                            timeWindowMinutes: 5
+                        }
+                    },
+                    customFormFields: customFields
+                };
+
+                console.log('Creating meeting with data:', meetingData);
+
+                const response = await fetch(`${API_BASE_URL}/meetings`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${authToken}`
+                    },
+                    body: JSON.stringify(meetingData)
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    console.log('Meeting created successfully:', result._id);
+
+                    // Debug: Fetch and log the created meeting to verify structure
+                    try {
+                        const verifyResponse = await fetch(`${API_BASE_URL}/meetings/${result._id}/full`, {
+                            headers: { 'Authorization': `Bearer ${authToken}` }
+                        });
+                        if (verifyResponse.ok) {
+                            const createdMeeting = await verifyResponse.json();
+                            console.log('Created meeting structure:', {
+                                title: createdMeeting.title,
+                                accessCodes: createdMeeting.accessCodes,
+                                attendanceConfig: createdMeeting.attendanceConfig,
+                                customFormFields: createdMeeting.customFormFields,
+                                location: createdMeeting.location,
+                                schedule: createdMeeting.schedule
+                            });
+                        }
+                    } catch (debugError) {
+                        console.error('Debug fetch failed:', debugError);
+                    }
+
+                    showAlert('Meeting created successfully!', 'success');
+                    bootstrap.Modal.getInstance(document.getElementById('createMeetingModal')).hide();
+                    document.getElementById('createMeetingForm').reset();
+                    resetMeetingModal();
+                    loadMeetings();
+                    loadDashboardData();
+                } else {
+                    console.error('Meeting creation failed:', result);
+                    showAlert(result.error || 'Failed to create meeting', 'danger');
+                }
+            } catch (error) {
+                console.error('Error creating meeting:', error);
+                showAlert('Error creating meeting: ' + error.message, 'danger');
+            } finally {
+                // Re-enable button
+                const createBtn = document.getElementById('createBtn');
+                createBtn.disabled = false;
+                createBtn.innerHTML = '<i class="fas fa-save me-2"></i> Create Meeting';
+            }
+        }
+
+        // View meeting details
+        async function viewMeetingDetails(meetingId) {
+            try {
+                const response = await fetch(`${API_BASE_URL}/meetings/${meetingId}/full`, {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+
+                if (response.ok) {
+                    const meeting = await response.json();
+                    const modalContent = document.getElementById('meetingDetailsContent');
+                    const publicCode = meeting.accessCodes?.publicCode || '';
+                    const meetingLink = `${FRONTEND_URL}/attend.html?code=${publicCode}`;
+
+                    modalContent.innerHTML = `
+                        <h5>${meeting.title}</h5>
+                        <p>${meeting.description || 'No description'}</p>
+                        <hr>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <p><strong>Start:</strong> ${new Date(meeting.schedule.startTime).toLocaleString()}</p>
+                                <p><strong>End:</strong> ${new Date(meeting.schedule.endTime).toLocaleString()}</p>
+                                <p><strong>Location:</strong> ${meeting.location.name}</p>
+                                <p><strong>Status:</strong> <span class="badge bg-${getStatusColor(meeting.status)}">${meeting.status}</span></p>
+                            </div>
+                            <div class="col-md-6">
+                                <p><strong>Public Code:</strong> ${meeting.accessCodes?.publicCode || 'N/A'}</p>
+                                <p><strong>SMS Code:</strong> ${meeting.accessCodes?.smsCode || 'N/A'}</p>
+                                <p><strong>USSD Code:</strong> ${meeting.accessCodes?.ussdCode || 'N/A'}</p>
+                                <p><strong>Total Attendance:</strong> ${meeting.attendance?.length || 0}</p>
+                            </div>
+                        </div>
+                        <hr>
+                        <h6>Meeting Link:</h6>
+                        <div class="meeting-link-box">
+                            <code>${meetingLink}</code>
+                            <button class="btn btn-sm btn-primary float-end copy-meeting-link-btn" data-link="${meetingLink}">
+                                <i class="fas fa-copy"></i> Copy
+                            </button>
+                        </div>
+                    `;
+
+                    // Add event listener for the copy button
+                    const copyBtn = modalContent.querySelector('.copy-meeting-link-btn');
+                    if (copyBtn) {
+                        copyBtn.addEventListener('click', function() {
+                            const link = this.getAttribute('data-link');
+                            copyToClipboard(link);
+                        });
+                    }
+
+                    new bootstrap.Modal(document.getElementById('viewMeetingModal')).show();
+                }
+            } catch (error) {
+                console.error('Error loading meeting details:', error);
+            }
+        }
+
+        // Copy meeting link
+        function copyMeetingLink(publicCode) {
+            const link = `${FRONTEND_URL}/attend.html?code=${publicCode}`;
+            copyToClipboard(link);
+        }
+
+        // View QR Code
+        async function viewQRCode(meetingId) {
+            try {
+                const response = await fetch(`${API_BASE_URL}/meetings/${meetingId}/qr-code`, {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+
+                if (response.ok) {
+                    // Get the image as a blob
+                    const blob = await response.blob();
+                    const qrCodeUrl = URL.createObjectURL(blob);
+
+                    const modalContent = document.getElementById('meetingDetailsContent');
+                    modalContent.innerHTML = `
+                        <div class="qr-code-display text-center">
+                            <h5>Meeting QR Code</h5>
+                            <p class="text-muted">Scan this code to mark attendance</p>
+                            <div class="my-4">
+                                <img src="${qrCodeUrl}" alt="QR Code" class="img-fluid" style="max-width: 400px;">
+                            </div>
+                            <div class="mt-3">
+                                <a href="${qrCodeUrl}" download="meeting-qr-code.png" class="btn btn-primary-custom">
+                                    <i class="fas fa-download me-2"></i> Download QR Code
+                                </a>
+                            </div>
+                        </div>
+                    `;
+                    new bootstrap.Modal(document.getElementById('viewMeetingModal')).show();
+                } else {
+                    showAlert('Failed to load QR code', 'danger');
+                }
+            } catch (error) {
+                console.error('Error loading QR code:', error);
+                showAlert('Error loading QR code', 'danger');
+            }
+        }
+
+        // View attendance for a meeting
+        async function viewAttendance(meetingId) {
+            showDashboardSection('attendance');
+            // Filter attendance by this meeting
+            document.getElementById('attendanceMeetingFilter').value = meetingId;
+            loadAllAttendance();
+        }
+
+        // Activate meeting
+        async function activateMeeting(meetingId) {
+            if (!confirm('Are you sure you want to activate this meeting?')) return;
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/meetings/${meetingId}/activate`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    showAlert('Meeting activated successfully!', 'success');
+                    loadMeetings();
+                    loadDashboardData();
+                } else {
+                    console.error('Activation failed:', result);
+
+                    // Log detailed validation status
+                    if (result.validationStatus) {
+                        console.error('Validation status:', result.validationStatus);
+                        console.error('Failed sections:',
+                            Object.entries(result.validationStatus.sections)
+                                .filter(([key, value]) => !value)
+                                .map(([key]) => key)
+                        );
+
+                        // Show detailed error messages
+                        if (result.validationStatus.messages && result.validationStatus.messages.length > 0) {
+                            const detailedMsg = 'Validation failed:\n' + result.validationStatus.messages.join('\n');
+                            showAlert(detailedMsg, 'danger');
+                            console.error('Validation messages:', result.validationStatus.messages);
+                        } else {
+                            const errorMsg = result.details || result.error || 'Failed to activate meeting';
+                            showAlert(errorMsg, 'danger');
+                        }
+                    } else {
+                        const errorMsg = result.details || result.error || 'Failed to activate meeting';
+                        showAlert(errorMsg, 'danger');
+                    }
+                }
+            } catch (error) {
+                console.error('Error activating meeting:', error);
+                showAlert('Error activating meeting', 'danger');
+            }
+        }
+
+        // End meeting
+        async function endMeeting(meetingId) {
+            if (!confirm('Are you sure you want to end this meeting?')) return;
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/meetings/${meetingId}/end`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+
+                if (response.ok) {
+                    showAlert('Meeting ended successfully!', 'success');
+                    loadMeetings();
+                    loadDashboardData();
+                } else {
+                    showAlert('Failed to end meeting', 'danger');
+                }
+            } catch (error) {
+                console.error('Error ending meeting:', error);
+                showAlert('Error ending meeting', 'danger');
+            }
+        }
+
+        // Delete meeting
+        async function deleteMeeting(meetingId) {
+            // First confirmation
+            if (!confirm('Are you sure you want to delete this meeting?\n\nThis action cannot be undone.')) {
+                return;
+            }
+
+            try {
+                // Try soft delete first (marks as cancelled)
+                const response = await fetch(`${API_BASE_URL}/meetings/${meetingId}`, {
+                    method: 'DELETE',
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    showAlert('Meeting deleted successfully!', 'success');
+                    loadMeetings();
+                    loadDashboardData();
+                } else if (response.status === 400 && result.attendanceCount > 0) {
+                    // Meeting has attendance records
+                    const forceDelete = confirm(
+                        `This meeting has ${result.attendanceCount} attendance record(s).\n\n` +
+                        `Do you want to cancel it anyway?\n\n` +
+                        `- Click OK to cancel the meeting (keeps attendance records)\n` +
+                        `- Click Cancel to keep the meeting`
+                    );
+
+                    if (forceDelete) {
+                        // Force delete (soft delete even with attendance)
+                        const forceResponse = await fetch(`${API_BASE_URL}/meetings/${meetingId}?force=true`, {
+                            method: 'DELETE',
+                            headers: { 'Authorization': `Bearer ${authToken}` }
+                        });
+
+                        if (forceResponse.ok) {
+                            showAlert('Meeting cancelled successfully!', 'success');
+                            loadMeetings();
+                            loadDashboardData();
+                        } else {
+                            showAlert('Failed to delete meeting', 'danger');
+                        }
+                    }
+                } else {
+                    showAlert(result.message || result.error || 'Failed to delete meeting', 'danger');
+                }
+            } catch (error) {
+                console.error('Error deleting meeting:', error);
+                showAlert('Error deleting meeting', 'danger');
+            }
+        }
+
+        // Load all attendance
+        async function loadAllAttendance() {
+            try {
+                const meetingFilter = document.getElementById('attendanceMeetingFilter')?.value || '';
+                const statusFilter = document.getElementById('attendanceStatusFilter')?.value || '';
+
+                // If a specific meeting is selected, use that endpoint
+                if (meetingFilter) {
+                    const response = await fetch(`${API_BASE_URL}/meetings/${meetingFilter}/attendance`, {
+                        headers: { 'Authorization': `Bearer ${authToken}` }
+                    });
+
+                    if (response.ok) {
+                        const data = await response.json();
+                        let records = data.attendance || [];
+
+                        // Add meeting info to each record
+                        records = records.map(r => ({
+                            ...r,
+                            meeting: data.meeting
+                        }));
+
+                        // Apply status filter if selected
+                        if (statusFilter) {
+                            records = records.filter(r => r.verificationStatus === statusFilter);
+                        }
+
+                        displayAllAttendance(records);
+                    }
+                } else {
+                    // Load attendance from all meetings
+                    const meetingsResponse = await fetch(`${API_BASE_URL}/meetings`, {
+                        headers: { 'Authorization': `Bearer ${authToken}` }
+                    });
+
+                    if (meetingsResponse.ok) {
+                        const meetings = await meetingsResponse.json();
+                        let allRecords = [];
+
+                        for (const meeting of meetings) {
+                            const response = await fetch(`${API_BASE_URL}/meetings/${meeting._id}/attendance`, {
+                                headers: { 'Authorization': `Bearer ${authToken}` }
+                            });
+
+                            if (response.ok) {
+                                const data = await response.json();
+                                const records = data.attendance || [];
+                                allRecords = allRecords.concat(records.map(r => ({...r, meeting: meeting})));
+                            }
+                        }
+
+                        // Apply status filter
+                        if (statusFilter) {
+                            allRecords = allRecords.filter(r => r.verificationStatus === statusFilter);
+                        }
+
+                        displayAllAttendance(allRecords);
+                    }
+                }
+            } catch (error) {
+                console.error('Error loading attendance:', error);
+            }
+        }
+
+        // Display all attendance
+        function displayAllAttendance(records) {
+            const tbody = document.getElementById('attendanceTable');
+            if (!records || records.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">No attendance records found</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = records.map(record => `
+                <tr>
+                    <td>${record.attendeeInfo?.fullName || 'N/A'}</td>
+                    <td>${record.meeting?.title || 'N/A'}</td>
+                    <td><span class="badge bg-info">${record.verificationType || 'N/A'}</span></td>
+                    <td>${new Date(record.checkInTime).toLocaleString()}</td>
+                    <td><span class="badge bg-${getStatusColor(record.verificationStatus)}">${record.verificationStatus}</span></td>
+                    <td>
+                        ${record.verificationStatus === 'pending' ? `
+                            <button class="btn btn-sm btn-success action-btn" onclick="updateAttendanceStatus('${record._id}', 'verified')" title="Verify">
+                                <i class="fas fa-check"></i>
+                            </button>
+                            <button class="btn btn-sm btn-danger action-btn" onclick="updateAttendanceStatus('${record._id}', 'rejected')" title="Reject">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        ` : ''}
+                        <button class="btn btn-sm btn-info action-btn" onclick="viewAttendanceDetails('${record._id}')" title="View Details">
+                            <i class="fas fa-eye"></i>
+                        </button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        // Update attendance status
+        async function updateAttendanceStatus(attendanceId, status) {
+            try {
+                const response = await fetch(`${API_BASE_URL}/attendance/${attendanceId}/status`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${authToken}`
+                    },
+                    body: JSON.stringify({ status })
+                });
+
+                if (response.ok) {
+                    showAlert(`Attendance ${status} successfully!`, 'success');
+                    loadAllAttendance();
+                } else {
+                    showAlert('Failed to update attendance status', 'danger');
+                }
+            } catch (error) {
+                console.error('Error updating attendance:', error);
+                showAlert('Error updating attendance status', 'danger');
+            }
+        }
+
+        // View attendance details
+        function viewAttendanceDetails(attendanceId) {
+            // You can implement a detailed view modal here
+            alert('Attendance details for ID: ' + attendanceId);
+        }
+
+        // Load meetings for filter dropdown
+        async function loadMeetingsForFilter() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/meetings`, {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+
+                if (response.ok) {
+                    const meetings = await response.json();
+                    const select = document.getElementById('attendanceMeetingFilter');
+                    select.innerHTML = '<option value="">All Meetings</option>' +
+                        meetings.map(m => `<option value="${m._id}">${m.title}</option>`).join('');
+                }
+            } catch (error) {
+                console.error('Error loading meetings for filter:', error);
+            }
+        }
+
+        // Load meetings for reports
+        async function loadMeetingsForReports() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/meetings`, {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+
+                if (response.ok) {
+                    const meetings = await response.json();
+                    const select = document.getElementById('reportMeetingSelect');
+                    select.innerHTML = '<option value="">Select a meeting...</option>' +
+                        meetings.map(m => `<option value="${m._id}">${m.title} - ${new Date(m.schedule.startTime).toLocaleDateString()}</option>`).join('');
+                }
+            } catch (error) {
+                console.error('Error loading meetings for reports:', error);
+            }
+        }
+
+        // Export all reports
+        async function exportAllReports(format) {
+            try {
+                const url = `${API_BASE_URL}/organization/meetings/export/${format}`;
+                window.open(url + `?token=${authToken}`, '_blank');
+                showAlert(`Exporting all meetings as ${format.toUpperCase()}...`, 'success');
+            } catch (error) {
+                console.error('Error exporting reports:', error);
+                showAlert('Error exporting reports', 'danger');
+            }
+        }
+
+        // Export meeting report
+        async function exportMeetingReport(format) {
+            const meetingId = document.getElementById('reportMeetingSelect').value;
+            if (!meetingId) {
+                showAlert('Please select a meeting', 'warning');
+                return;
+            }
+
+            try {
+                const url = `${API_BASE_URL}/meetings/${meetingId}/export/${format}`;
+                window.open(url + `?token=${authToken}`, '_blank');
+                showAlert(`Exporting meeting as ${format.toUpperCase()}...`, 'success');
+            } catch (error) {
+                console.error('Error exporting meeting report:', error);
+                showAlert('Error exporting meeting report', 'danger');
+            }
+        }
+
+        // Load admins
+        async function loadAdmins() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/admins`, {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+
+                if (response.ok) {
+                    const admins = await response.json();
+                    displayAdmins(admins);
+                }
+            } catch (error) {
+                console.error('Error loading admins:', error);
+            }
+        }
+
+        // Display admins
+        function displayAdmins(admins) {
+            const tbody = document.getElementById('adminsTable');
+            if (!admins || admins.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">No admins found</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = admins.map(admin => `
+                <tr>
+                    <td>${admin.fullName}</td>
+                    <td>${admin.email}</td>
+                    <td>${admin.phone || 'N/A'}</td>
+                    <td><span class="badge bg-primary">${admin.role}</span></td>
+                    <td><span class="badge bg-${admin.isActive ? 'success' : 'danger'}">${admin.isActive ? 'Active' : 'Inactive'}</span></td>
+                    <td>
+                        <button class="btn btn-sm btn-warning action-btn" onclick="editAdmin('${admin._id}')" title="Edit">
+                            <i class="fas fa-edit"></i>
+                        </button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        // Create admin
+        async function createAdmin() {
+            try {
+                const adminData = {
+                    fullName: document.getElementById('adminFullName').value,
+                    email: document.getElementById('adminEmail').value,
+                    phone: document.getElementById('adminPhone').value,
+                    password: document.getElementById('adminPassword').value,
+                    role: document.getElementById('adminRole').value
+                };
+
+                const response = await fetch(`${API_BASE_URL}/admins`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${authToken}`
+                    },
+                    body: JSON.stringify(adminData)
+                });
+
+                if (response.ok) {
+                    showAlert('Admin created successfully!', 'success');
+                    bootstrap.Modal.getInstance(document.getElementById('createAdminModal')).hide();
+                    document.getElementById('createAdminForm').reset();
+                    loadAdmins();
+                } else {
+                    const error = await response.json();
+                    showAlert(error.error || 'Failed to create admin', 'danger');
+                }
+            } catch (error) {
+                console.error('Error creating admin:', error);
+                showAlert('Error creating admin', 'danger');
+            }
+        }
+
+        // Edit admin
+        function editAdmin(adminId) {
+            alert('Edit admin functionality - ID: ' + adminId);
+        }
+
+        // Load settings
+        async function loadSettings() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/organization`, {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+
+                if (response.ok) {
+                    const org = await response.json();
+                    document.getElementById('orgName').textContent = org.name || 'N/A';
+                    document.getElementById('defaultRadius').value = org.settings?.defaultLocationRadius || 100;
+                    document.getElementById('defaultTimeWindow').value = org.settings?.defaultTimeWindow || 30;
+                    document.getElementById('allowGPS').checked = org.settings?.allowGPS !== false;
+                    document.getElementById('allowSMS').checked = org.settings?.allowSMS !== false;
+                    document.getElementById('allowUSSD').checked = org.settings?.allowUSSD !== false;
+                    document.getElementById('allowKiosk').checked = org.settings?.allowKiosk !== false;
+                    document.getElementById('allowManual').checked = org.settings?.allowManual !== false;
+                }
+            } catch (error) {
+                console.error('Error loading settings:', error);
+            }
+        }
+
+        // Save settings
+        async function saveSettings(event) {
+            event.preventDefault();
+
+            try {
+                const settings = {
+                    defaultLocationRadius: parseInt(document.getElementById('defaultRadius').value),
+                    defaultTimeWindow: parseInt(document.getElementById('defaultTimeWindow').value),
+                    allowGPS: document.getElementById('allowGPS').checked,
+                    allowSMS: document.getElementById('allowSMS').checked,
+                    allowUSSD: document.getElementById('allowUSSD').checked,
+                    allowKiosk: document.getElementById('allowKiosk').checked,
+                    allowManual: document.getElementById('allowManual').checked
+                };
+
+                const response = await fetch(`${API_BASE_URL}/organization/settings`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${authToken}`
+                    },
+                    body: JSON.stringify(settings)
+                });
+
+                if (response.ok) {
+                    showAlert('Settings saved successfully!', 'success');
+                } else {
+                    showAlert('Failed to save settings', 'danger');
+                }
+            } catch (error) {
+                console.error('Error saving settings:', error);
+                showAlert('Error saving settings', 'danger');
+            }
+        }
+
+        // Load audit logs
+        async function loadAuditLogs() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/audit-logs`, {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+
+                if (response.ok) {
+                    const logs = await response.json();
+                    displayAuditLogs(logs);
+                }
+            } catch (error) {
+                console.error('Error loading audit logs:', error);
+            }
+        }
+
+        // Display audit logs
+        function displayAuditLogs(logs) {
+            const tbody = document.getElementById('auditLogsTable');
+            if (!logs || logs.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">No audit logs found</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = logs.slice(0, 50).map(log => `
+                <tr>
+                    <td>${new Date(log.timestamp).toLocaleString()}</td>
+                    <td>${log.userId?.fullName || 'System'}</td>
+                    <td><span class="badge bg-secondary">${log.action}</span></td>
+                    <td>${JSON.stringify(log.details || {})}</td>
+                </tr>
+            `).join('');
+        }
+
+        // Utility functions
+        function getStatusColor(status) {
+            const colors = {
+                'draft': 'secondary',
+                'active': 'success',
+                'in_progress': 'primary',
+                'completed': 'info',
+                'cancelled': 'danger',
+                'pending': 'warning',
+                'verified': 'success',
+                'flagged': 'warning',
+                'rejected': 'danger'
+            };
+            return colors[status] || 'secondary';
+        }
+
+        function copyToClipboard(text) {
+            navigator.clipboard.writeText(text).then(() => {
+                showAlert('Copied to clipboard!', 'success');
+            }).catch(() => {
+                showAlert('Failed to copy', 'danger');
+            });
+        }
+
+        function showAlert(message, type) {
+            // Create alert element
+            const alert = document.createElement('div');
+            alert.className = `alert alert-${type} alert-dismissible fade show position-fixed top-0 start-50 translate-middle-x mt-3`;
+            alert.style.zIndex = '9999';
+            alert.innerHTML = `
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            `;
+            document.body.appendChild(alert);
+
+            // Auto-remove after 3 seconds
+            setTimeout(() => {
+                alert.remove();
+            }, 3000);
+        }
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            // Hide loading spinner
+            setTimeout(() => {
+                const spinner = document.getElementById('loadingSpinner');
+                if (spinner) spinner.style.display = 'none';
+            }, 500);
+
+            // Check authentication
+            if (checkAuth()) {
+                loadUserInfo();
+                loadDashboardData();
+            }
+
+            // Setup sidebar click handlers
+            document.querySelectorAll('.sidebar-item[data-section]').forEach(item => {
+                item.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    const section = this.getAttribute('data-section');
+                    showDashboardSection(section);
+                });
+            });
+
+            // Reset meeting modal when opened
+            const meetingModal = document.getElementById('createMeetingModal');
+            if (meetingModal) {
+                meetingModal.addEventListener('show.bs.modal', function() {
+                    resetMeetingModal();
+                });
+            }
+
+            // Add event listeners for modal buttons
+            const nextBtn = document.getElementById('nextBtn');
+            if (nextBtn) {
+                nextBtn.addEventListener('click', nextStep);
+            }
+
+            const prevBtn = document.getElementById('prevBtn');
+            if (prevBtn) {
+                prevBtn.addEventListener('click', previousStep);
+            }
+
+            const createBtn = document.getElementById('createBtn');
+            if (createBtn) {
+                createBtn.addEventListener('click', createMeeting);
+            }
+
+            const addCustomFieldBtn = document.getElementById('addCustomFieldBtn');
+            if (addCustomFieldBtn) {
+                addCustomFieldBtn.addEventListener('click', addCustomField);
+            }
+
+            // Setup event delegation for meeting action buttons
+            const meetingsTable = document.getElementById('meetingsTable');
+            if (meetingsTable) {
+                meetingsTable.addEventListener('click', function(e) {
+                    // View meeting details
+                    const viewBtn = e.target.closest('.view-meeting-btn');
+                    if (viewBtn) {
+                        const meetingId = viewBtn.getAttribute('data-meeting-id');
+                        viewMeetingDetails(meetingId);
+                        return;
+                    }
+
+                    // Copy meeting link
+                    const copyBtn = e.target.closest('.copy-link-btn');
+                    if (copyBtn) {
+                        const publicCode = copyBtn.getAttribute('data-public-code');
+                        copyMeetingLink(publicCode);
+                        return;
+                    }
+
+                    // View QR code
+                    const qrBtn = e.target.closest('.qr-code-btn');
+                    if (qrBtn) {
+                        const meetingId = qrBtn.getAttribute('data-meeting-id');
+                        viewQRCode(meetingId);
+                        return;
+                    }
+
+                    // View attendance
+                    const attendanceBtn = e.target.closest('.view-attendance-btn');
+                    if (attendanceBtn) {
+                        const meetingId = attendanceBtn.getAttribute('data-meeting-id');
+                        viewAttendance(meetingId);
+                        return;
+                    }
+
+                    // Activate meeting
+                    const activateBtn = e.target.closest('.activate-meeting-btn');
+                    if (activateBtn) {
+                        const meetingId = activateBtn.getAttribute('data-meeting-id');
+                        activateMeeting(meetingId);
+                        return;
+                    }
+
+                    // End meeting
+                    const endBtn = e.target.closest('.end-meeting-btn');
+                    if (endBtn) {
+                        const meetingId = endBtn.getAttribute('data-meeting-id');
+                        endMeeting(meetingId);
+                        return;
+                    }
+
+                    // Delete meeting
+                    const deleteBtn = e.target.closest('.delete-meeting-btn');
+                    if (deleteBtn) {
+                        const meetingId = deleteBtn.getAttribute('data-meeting-id');
+                        deleteMeeting(meetingId);
+                        return;
+                    }
+                });
+            }
+        });
+    </script>
+</body>
+</html>

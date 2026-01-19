@@ -17,10 +17,12 @@ const NodeGeocoder = require('node-geocoder');
 const twilio = require('twilio');
 // const redis = require('redis');
 const { promisify } = require('util');
+const path = require('path');
 
 // Initialize Express
 const app = express();
 const PORT = process.env.PORT || 5000;
+const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
 
 // Redis client for rate limiting
 // const redisClient = redis.createClient({
@@ -34,33 +36,21 @@ const limiter = rateLimit({
   max: 100 // limit each IP to 100 requests per windowMs
 });
 
-// Middleware
-app.use(helmet());
-app.use(cors());
-app.use(express.json());
-app.use(limiter);
-app.use(express.urlencoded({ extended: true }));
-
-// Add after middleware setup
-app.use((req, res, next) => {
-  console.log(`${req.method} ${req.url}`);
-  if (req.method === 'POST' || req.method === 'PUT') {
-    console.log('Body:', JSON.stringify(req.body, null, 2));
-  }
-  next();
-});
-
+// CORS configuration
 const corsOptions = {
   origin: function (origin, callback) {
     if (!origin) return callback(null, true);
-    
+
     const allowedOrigins = [
       'http://localhost:3000',
       'http://localhost:5000',
       'https://gsf-inky.vercel.app',
     ];
 
-    if (allowedOrigins.indexOf(origin) !== -1) {
+    // Allow any Vercel preview deployment
+    const isVercelPreview = origin && origin.includes('.vercel.app');
+
+    if (allowedOrigins.indexOf(origin) !== -1 || isVercelPreview) {
       callback(null, true);
     } else {
       if (process.env.NODE_ENV === 'production') {
@@ -94,16 +84,87 @@ const corsOptions = {
   optionsSuccessStatus: 204
 };
 
+// Middleware
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net", "https://cdnjs.cloudflare.com", "https://fonts.googleapis.com", "https://unpkg.com"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net", "https://cdnjs.cloudflare.com", "https://unpkg.com"],
+      fontSrc: ["'self'", "https://fonts.gstatic.com", "https://cdnjs.cloudflare.com"],
+      imgSrc: ["'self'", "data:", "https:", "blob:"],
+      connectSrc: ["'self'", "https://cdn.jsdelivr.net", "https://cdnjs.cloudflare.com", "https://unpkg.com"]
+    }
+  }
+}));
 app.use(cors(corsOptions));
+app.use(express.json());
+app.use(limiter);
+app.use(express.urlencoded({ extended: true }));
 
-// MongoDB Connection - FIXED VERSION
-mongoose.connect(process.env.MONGODB_URI || 'mongodb+srv://prezent:prezent@prezent.pw70dzq.mongodb.net/prezent')
-  .then(() => {
-    console.log('MongoDB connected successfully');
-  })
-  .catch((err) => {
-    console.error('MongoDB connection error:', err);
-  });
+// Logging middleware
+app.use((req, res, next) => {
+  console.log(`${req.method} ${req.url}`);
+  if (req.method === 'POST' || req.method === 'PUT') {
+    console.log('Body:', JSON.stringify(req.body, null, 2));
+  }
+  next();
+});
+
+// Serve static files from public directory
+app.use(express.static(path.join(__dirname, 'public')));
+
+// MongoDB Connection - Enhanced with better error handling
+// Use local MongoDB by default, or set MONGODB_URI environment variable for Atlas
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://prezent:prezent@prezent.pw70dzq.mongodb.net/prezent';
+
+const mongooseOptions = {
+  serverSelectionTimeoutMS: 10000, // Increased timeout
+  socketTimeoutMS: 45000,
+  maxPoolSize: 10,
+  minPoolSize: 2,
+  maxIdleTimeMS: 30000,
+  family: 4,
+  retryWrites: true,
+  retryReads: true
+};
+
+// Connect with retry logic
+const connectDB = async (retries = 5) => {
+  try {
+    await mongoose.connect(MONGODB_URI, mongooseOptions);
+    console.log('✅ MongoDB connected successfully');
+  } catch (err) {
+    console.error('❌ MongoDB connection error:', err.message);
+
+    if (retries > 0) {
+      console.log(`Retrying connection... (${retries} attempts left)`);
+      setTimeout(() => connectDB(retries - 1), 5000);
+    } else {
+      console.error('Failed to connect to MongoDB after multiple attempts');
+      console.log('⚠️  Server will continue but database operations will fail');
+    }
+  }
+};
+
+connectDB();
+
+// Handle MongoDB connection events
+mongoose.connection.on('connected', () => {
+  console.log('✅ MongoDB connection established');
+});
+
+mongoose.connection.on('disconnected', () => {
+  console.log('⚠️  MongoDB disconnected. Auto-reconnecting...');
+});
+
+mongoose.connection.on('reconnected', () => {
+  console.log('✅ MongoDB reconnected successfully');
+});
+
+mongoose.connection.on('error', (err) => {
+  console.error('❌ MongoDB error:', err.message);
+});
 
 // Database Models
 const Schema = mongoose.Schema;
@@ -722,12 +783,12 @@ const generateAttendancePDF = async (meeting, records, organization) => {
 
 // Generate meeting links
 const generateMeetingLinks = (meetingId, publicCode) => {
-  const baseUrl = process.env.FRONTEND_URL || 'https://gsf-inky.vercel.app';
+  const baseUrl = process.env.BASE_URL || BASE_URL;
   return {
-    adminDashboard: `${baseUrl}/admin/meetings/${meetingId}`,
-    attendeeForm: `${baseUrl}/attend/${publicCode}`,
+    adminDashboard: `${baseUrl}/#/admin/meetings/${meetingId}`,
+    attendeeForm: `${baseUrl}/attend.html?code=${publicCode}`,
     qrCodeUrl: `${baseUrl}/api/meetings/${meetingId}/qrcode`,
-    publicAttendanceLink: `${baseUrl}/attend/${publicCode}/form`,
+    publicAttendanceLink: `${baseUrl}/attend.html?code=${publicCode}`,
     directQRCodeLink: `${baseUrl}/api/meetings/${meetingId}/qr-code`
   };
 };
@@ -735,7 +796,8 @@ const generateMeetingLinks = (meetingId, publicCode) => {
 // Generate meeting QR Code
 const generateMeetingQRCode = async (meetingCode) => {
   try {
-    const url = `${process.env.FRONTEND_URL || 'https://gsf-inky.vercel.app'}/attend/${meetingCode}`;
+    const baseUrl = process.env.BASE_URL || BASE_URL;
+    const url = `${baseUrl}/attend.html?code=${meetingCode}`;
     const qrCode = await QRCode.toDataURL(url, {
       width: 300,
       margin: 2,
@@ -1304,53 +1366,119 @@ const validateMeetingCompletion = (meeting) => {
       shareQRCode: false,
       advancedSettings: false
     },
-    messages: []
+    messages: [],
+    debug: {}
   };
 
+  console.log('=== VALIDATION DEBUG START ===');
+  console.log('Meeting ID:', meeting._id);
+  console.log('Meeting Title:', meeting.title);
+
   // 1. Check Meeting Details
-  if (meeting.title && 
-      meeting.location.name && 
-      meeting.location.latitude && 
-      meeting.location.longitude &&
-      meeting.schedule.startTime &&
-      meeting.schedule.endTime) {
+  const hasTitle = !!meeting.title;
+  const hasLocationName = !!meeting.location?.name;
+  const hasLatitude = !!meeting.location?.latitude;
+  const hasLongitude = !!meeting.location?.longitude;
+  const hasStartTime = !!meeting.schedule?.startTime;
+  const hasEndTime = !!meeting.schedule?.endTime;
+
+  validation.debug.meetingDetails = {
+    hasTitle,
+    hasLocationName,
+    hasLatitude,
+    hasLongitude,
+    hasStartTime,
+    hasEndTime
+  };
+
+  if (hasTitle && hasLocationName && hasLatitude && hasLongitude && hasStartTime && hasEndTime) {
     validation.sections.meetingDetails = true;
   } else {
-    validation.messages.push('Meeting details incomplete: Title, location, and schedule are required');
+    const missing = [];
+    if (!hasTitle) missing.push('title');
+    if (!hasLocationName) missing.push('location.name');
+    if (!hasLatitude) missing.push('location.latitude');
+    if (!hasLongitude) missing.push('location.longitude');
+    if (!hasStartTime) missing.push('schedule.startTime');
+    if (!hasEndTime) missing.push('schedule.endTime');
+    validation.messages.push(`Meeting details incomplete. Missing: ${missing.join(', ')}`);
   }
+  console.log('Section 1 - Meeting Details:', validation.sections.meetingDetails, validation.debug.meetingDetails);
 
   // 2. Check Attendance Form (if required fields are configured)
-  const hasRequiredFields = meeting.attendanceConfig?.requiredFields?.length > 0 ||
-                           meeting.customFormFields?.length > 0;
+  const requiredFieldsLength = meeting.attendanceConfig?.requiredFields?.length || 0;
+  const customFieldsLength = meeting.customFormFields?.length || 0;
+  const hasRequiredFields = requiredFieldsLength > 0 || customFieldsLength > 0;
+
+  validation.debug.attendanceForm = {
+    requiredFieldsLength,
+    customFieldsLength,
+    hasRequiredFields,
+    requiredFields: meeting.attendanceConfig?.requiredFields,
+    customFormFields: meeting.customFormFields
+  };
+
   validation.sections.attendanceForm = hasRequiredFields;
   if (!hasRequiredFields) {
-    validation.messages.push('Attendance form incomplete: Configure at least one required field');
+    validation.messages.push('Attendance form incomplete: Configure at least one required field or custom field');
   }
+  console.log('Section 2 - Attendance Form:', validation.sections.attendanceForm, validation.debug.attendanceForm);
 
   // 3. Check Share & QR Code (access codes should be generated)
-  validation.sections.shareQRCode = meeting.accessCodes?.publicCode && 
-                                    meeting.accessCodes?.smsCode && 
-                                    meeting.accessCodes?.ussdCode;
+  const hasPublicCode = !!meeting.accessCodes?.publicCode;
+  const hasSmsCode = !!meeting.accessCodes?.smsCode;
+  const hasUssdCode = !!meeting.accessCodes?.ussdCode;
+
+  validation.debug.shareQRCode = {
+    hasPublicCode,
+    hasSmsCode,
+    hasUssdCode,
+    accessCodes: meeting.accessCodes
+  };
+
+  validation.sections.shareQRCode = hasPublicCode && hasSmsCode && hasUssdCode;
   if (!validation.sections.shareQRCode) {
-    validation.messages.push('Share & QR Code section incomplete: Generate access codes');
+    const missing = [];
+    if (!hasPublicCode) missing.push('publicCode');
+    if (!hasSmsCode) missing.push('smsCode');
+    if (!hasUssdCode) missing.push('ussdCode');
+    validation.messages.push(`Share & QR Code section incomplete. Missing: ${missing.join(', ')}`);
   }
+  console.log('Section 3 - Share & QR Code:', validation.sections.shareQRCode, validation.debug.shareQRCode);
 
   // 4. Check Advanced Settings (at least one attendance method enabled)
   const attendanceMethods = meeting.attendanceConfig?.allowedModes;
-  const hasEnabledMethods = attendanceMethods && (
-    attendanceMethods.smartphoneGPS ||
-    attendanceMethods.sms ||
-    attendanceMethods.ussd ||
-    attendanceMethods.kiosk ||
-    attendanceMethods.manual
-  );
+  const hasSmartphoneGPS = !!attendanceMethods?.smartphoneGPS;
+  const hasSms = !!attendanceMethods?.sms;
+  const hasUssd = !!attendanceMethods?.ussd;
+  const hasKiosk = !!attendanceMethods?.kiosk;
+  const hasManual = !!attendanceMethods?.manual;
+  const hasEnabledMethods = hasSmartphoneGPS || hasSms || hasUssd || hasKiosk || hasManual;
+
+  validation.debug.advancedSettings = {
+    hasSmartphoneGPS,
+    hasSms,
+    hasUssd,
+    hasKiosk,
+    hasManual,
+    hasEnabledMethods,
+    allowedModes: attendanceMethods
+  };
+
   validation.sections.advancedSettings = hasEnabledMethods;
   if (!hasEnabledMethods) {
-    validation.messages.push('Advanced settings incomplete: Enable at least one attendance method');
+    validation.messages.push('Advanced settings incomplete: Enable at least one attendance method (GPS, SMS, USSD, Kiosk, or Manual)');
   }
+  console.log('Section 4 - Advanced Settings:', validation.sections.advancedSettings, validation.debug.advancedSettings);
 
   // Check if all sections are complete
   validation.allSectionsComplete = Object.values(validation.sections).every(section => section === true);
+
+  console.log('=== VALIDATION RESULT ===');
+  console.log('All Sections Complete:', validation.allSectionsComplete);
+  console.log('Sections:', validation.sections);
+  console.log('Messages:', validation.messages);
+  console.log('=== VALIDATION DEBUG END ===');
 
   return validation;
 };
@@ -1405,6 +1533,31 @@ const validateAdvancedSettings = (data) => {
 
 // ================= ROUTES =================
 
+// 0. HTML Page Routes (must come before API routes)
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+app.get('/index.html', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+app.get('/attend.html', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'attend.html'));
+});
+
+app.get('/login.html', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'login.html'));
+});
+
+app.get('/register.html', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'register.html'));
+});
+
+app.get('/dashboard.html', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
+});
+
 // 1. Authentication Routes
 app.post('/api/auth/register', async (req, res) => {
   try {
@@ -1415,12 +1568,21 @@ app.post('/api/auth/register', async (req, res) => {
     if (existingUser) {
       return res.status(400).json({ error: 'User already exists' });
     }
-    
-    // Create organization (first user becomes super admin)
-    const organization = await Organization.create({
-      name: organizationName,
-      domain: email.split('@')[1]
-    });
+
+    // Check if organization exists or create new one
+    // Each organization name should be unique to avoid conflicts
+    const domain = email.split('@')[1];
+    const orgIdentifier = `${organizationName.toLowerCase().replace(/[^a-z0-9]/g, '-')}-${domain}`;
+
+    let organization = await Organization.findOne({ domain: orgIdentifier });
+
+    if (!organization) {
+      // Create new organization (first user becomes super admin)
+      organization = await Organization.create({
+        name: organizationName,
+        domain: orgIdentifier
+      });
+    }
     
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -1477,7 +1639,20 @@ app.post('/api/auth/register', async (req, res) => {
     });
   } catch (error) {
     console.error('Registration error:', error);
-    res.status(500).json({ error: 'Registration failed' });
+
+    // Provide more specific error messages
+    if (error.code === 11000) {
+      return res.status(400).json({ error: 'User with this email already exists' });
+    }
+
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({ error: error.message });
+    }
+
+    res.status(500).json({
+      error: 'Registration failed. Please try again.',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 });
 
@@ -2183,12 +2358,12 @@ app.post('/api/meetings/:meetingId/end', authenticateToken, async (req, res) => 
       {
         _id: req.params.meetingId,
         organizationId: req.user.organizationId._id,
-        status: 'in_progress'
+        status: { $in: ['active', 'in_progress'] }
       },
       { status: 'completed', updatedAt: new Date() },
       { new: true }
     );
-    
+
     if (!meeting) {
       return res.status(404).json({ error: 'Meeting not found or cannot be ended' });
     }
@@ -5475,13 +5650,30 @@ app.get('/api/meetings/:meetingId/live', authenticateToken, async (req, res) => 
 
 // 10. Health Check
 app.get('/api/health', (req, res) => {
-  res.json({
-    status: 'healthy',
+  const dbState = mongoose.connection.readyState;
+  const dbStateMap = {
+    0: 'disconnected',
+    1: 'connected',
+    2: 'connecting',
+    3: 'disconnecting'
+  };
+
+  const isHealthy = dbState === 1;
+
+  res.status(isHealthy ? 200 : 503).json({
+    status: isHealthy ? 'healthy' : 'degraded',
     timestamp: new Date(),
+    uptime: process.uptime(),
     services: {
-      database: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
-      // redis: redisClient.connected ? 'connected' : 'disconnected'
-    }
+      api: 'operational',
+      database: {
+        status: dbStateMap[dbState] || 'unknown',
+        readyState: dbState,
+        name: mongoose.connection.name || 'not connected'
+      }
+    },
+    environment: process.env.NODE_ENV || 'development',
+    version: '1.0.0'
   });
 });
 
@@ -5523,9 +5715,14 @@ app.use((err, req, res, next) => {
   });
 });
 
-// 404 handler
+// 404 handler - differentiate between API and static file requests
 app.use((req, res) => {
-  res.status(404).json({ error: 'Endpoint not found' });
+  if (req.path.startsWith('/api/')) {
+    res.status(404).json({ error: 'Endpoint not found' });
+  } else {
+    // For non-API routes, serve a 404 page or redirect to home
+    res.status(404).sendFile(path.join(__dirname, 'public', 'index.html'));
+  }
 });
 
 // Start server
