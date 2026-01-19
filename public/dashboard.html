@@ -1057,6 +1057,108 @@
         </div>
     </div>
 
+    <!-- Edit Meeting Modal -->
+    <div class="modal fade" id="editMeetingModal" tabindex="-1">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Edit Meeting</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="editMeetingForm">
+                        <input type="hidden" id="editMeetingId">
+
+                        <div class="mb-3">
+                            <label class="form-label">Meeting Title *</label>
+                            <input type="text" class="form-control" id="editMeetingTitle" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Description</label>
+                            <textarea class="form-control" id="editMeetingDescription" rows="3"></textarea>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Start Date & Time *</label>
+                                <input type="datetime-local" class="form-control" id="editMeetingStartTime" required>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">End Date & Time *</label>
+                                <input type="datetime-local" class="form-control" id="editMeetingEndTime" required>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Location Name *</label>
+                            <input type="text" class="form-control" id="editMeetingLocationName" required>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Latitude *</label>
+                                <input type="number" step="any" class="form-control" id="editMeetingLatitude" required>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Longitude *</label>
+                                <input type="number" step="any" class="form-control" id="editMeetingLongitude" required>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Allowed Radius (meters) *</label>
+                            <input type="number" class="form-control" id="editMeetingRadius" min="10" required>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Allowed Attendance Modes</label>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="editAllowSmartphoneGPS">
+                                <label class="form-check-label" for="editAllowSmartphoneGPS">Smartphone GPS</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="editAllowSMSMode">
+                                <label class="form-check-label" for="editAllowSMSMode">SMS</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="editAllowUSSDMode">
+                                <label class="form-check-label" for="editAllowUSSDMode">USSD</label>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Required Fields</label>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="editRequireEmail">
+                                <label class="form-check-label" for="editRequireEmail">Email Address</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="editRequirePhone">
+                                <label class="form-check-label" for="editRequirePhone">Phone Number</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="editRequireIdNumber">
+                                <label class="form-check-label" for="editRequireIdNumber">ID Number</label>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Custom Form Fields</label>
+                            <button type="button" class="btn btn-sm btn-primary-custom" id="editAddCustomFieldBtn">
+                                <i class="fas fa-plus me-2"></i> Add Custom Field
+                            </button>
+                            <div id="editCustomFieldsList" class="mt-3">
+                                <!-- Custom fields will be added here -->
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary-custom" id="updateMeetingBtn">
+                        <i class="fas fa-save me-2"></i> Update Meeting
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- View Meeting Details Modal -->
     <div class="modal fade" id="viewMeetingModal" tabindex="-1">
         <div class="modal-dialog modal-lg">
@@ -1428,6 +1530,7 @@
                         <button class="btn btn-sm btn-info action-btn view-meeting-btn" data-meeting-id="${meeting._id}" title="View Details">
                             <i class="fas fa-eye"></i>
                         </button>
+                        ${meeting.status === 'draft' ? `<button class="btn btn-sm btn-secondary action-btn edit-meeting-btn" data-meeting-id="${meeting._id}" title="Edit Meeting"><i class="fas fa-edit"></i></button>` : ''}
                         <button class="btn btn-sm btn-primary action-btn copy-link-btn" data-public-code="${meeting.accessCodes?.publicCode || ''}" title="Copy Link">
                             <i class="fas fa-link"></i>
                         </button>
@@ -1880,6 +1983,253 @@
                 const createBtn = document.getElementById('createBtn');
                 createBtn.disabled = false;
                 createBtn.innerHTML = '<i class="fas fa-save me-2"></i> Create Meeting';
+            }
+        }
+
+        // Edit meeting
+        let editingMeetingId = null;
+
+        async function editMeeting(meetingId) {
+            try {
+                editingMeetingId = meetingId;
+
+                const response = await fetch(`${API_BASE_URL}/meetings/${meetingId}/full`, {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+
+                if (response.ok) {
+                    const meeting = await response.json();
+
+                    // Populate form fields
+                    document.getElementById('editMeetingId').value = meeting._id;
+                    document.getElementById('editMeetingTitle').value = meeting.title;
+                    document.getElementById('editMeetingDescription').value = meeting.description || '';
+
+                    // Format dates for datetime-local input
+                    const startTime = new Date(meeting.schedule.startTime);
+                    const endTime = new Date(meeting.schedule.endTime);
+                    document.getElementById('editMeetingStartTime').value = formatDateTimeLocal(startTime);
+                    document.getElementById('editMeetingEndTime').value = formatDateTimeLocal(endTime);
+
+                    // Location
+                    document.getElementById('editMeetingLocationName').value = meeting.location.name;
+                    document.getElementById('editMeetingLatitude').value = meeting.location.latitude;
+                    document.getElementById('editMeetingLongitude').value = meeting.location.longitude;
+                    document.getElementById('editMeetingRadius').value = meeting.location.radius;
+
+                    // Attendance modes
+                    document.getElementById('editAllowSmartphoneGPS').checked = meeting.attendanceConfig?.allowedModes?.smartphoneGPS || false;
+                    document.getElementById('editAllowSMSMode').checked = meeting.attendanceConfig?.allowedModes?.sms || false;
+                    document.getElementById('editAllowUSSDMode').checked = meeting.attendanceConfig?.allowedModes?.ussd || false;
+
+                    // Required fields
+                    const requiredFields = meeting.attendanceConfig?.requiredFields || [];
+                    document.getElementById('editRequireEmail').checked = requiredFields.some(f => f.field === 'email');
+                    document.getElementById('editRequirePhone').checked = requiredFields.some(f => f.field === 'phone');
+                    document.getElementById('editRequireIdNumber').checked = requiredFields.some(f => f.field === 'idNumber');
+
+                    // Custom fields
+                    const customFieldsContainer = document.getElementById('editCustomFieldsList');
+                    customFieldsContainer.innerHTML = '';
+
+                    if (meeting.customFormFields && meeting.customFormFields.length > 0) {
+                        meeting.customFormFields.forEach(field => {
+                            addEditCustomField(field);
+                        });
+                    }
+
+                    // Show modal
+                    const modal = new bootstrap.Modal(document.getElementById('editMeetingModal'));
+                    modal.show();
+                } else {
+                    showAlert('Failed to load meeting details', 'danger');
+                }
+            } catch (error) {
+                console.error('Error loading meeting for edit:', error);
+                showAlert('Error loading meeting details', 'danger');
+            }
+        }
+
+        // Format date for datetime-local input
+        function formatDateTimeLocal(date) {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            const hours = String(date.getHours()).padStart(2, '0');
+            const minutes = String(date.getMinutes()).padStart(2, '0');
+            return `${year}-${month}-${day}T${hours}:${minutes}`;
+        }
+
+        // Add custom field to edit form
+        function addEditCustomField(field = null) {
+            const fieldId = 'editCustomField' + Date.now();
+            const fieldHtml = `
+                <div class="custom-field-item mb-3" id="${fieldId}">
+                    <div class="row">
+                        <div class="col-md-4 mb-2">
+                            <label class="form-label">Field Label</label>
+                            <input type="text" class="form-control edit-custom-field-label" placeholder="e.g., Department" value="${field?.label || ''}">
+                        </div>
+                        <div class="col-md-3 mb-2">
+                            <label class="form-label">Field Type</label>
+                            <select class="form-select edit-custom-field-type">
+                                <option value="text" ${field?.fieldType === 'text' ? 'selected' : ''}>Text</option>
+                                <option value="email" ${field?.fieldType === 'email' ? 'selected' : ''}>Email</option>
+                                <option value="number" ${field?.fieldType === 'number' ? 'selected' : ''}>Number</option>
+                                <option value="tel" ${field?.fieldType === 'tel' ? 'selected' : ''}>Phone</option>
+                                <option value="textarea" ${field?.fieldType === 'textarea' ? 'selected' : ''}>Long Text</option>
+                                <option value="select" ${field?.fieldType === 'select' ? 'selected' : ''}>Dropdown</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3 mb-2">
+                            <label class="form-label">Required</label>
+                            <select class="form-select edit-custom-field-required">
+                                <option value="true" ${field?.required ? 'selected' : ''}>Yes</option>
+                                <option value="false" ${!field?.required ? 'selected' : ''}>No</option>
+                            </select>
+                        </div>
+                        <div class="col-md-2 mb-2">
+                            <label class="form-label">&nbsp;</label>
+                            <button type="button" class="btn btn-danger btn-sm w-100 remove-edit-field-btn" data-field-id="${fieldId}">
+                                <i class="fas fa-trash"></i> Remove
+                            </button>
+                        </div>
+                    </div>
+                    <div class="row edit-dropdown-options" style="display: ${field?.fieldType === 'select' ? 'block' : 'none'};">
+                        <div class="col-12">
+                            <label class="form-label">Dropdown Options (comma-separated)</label>
+                            <input type="text" class="form-control edit-field-options" placeholder="Option 1, Option 2, Option 3" value="${field?.options?.join(', ') || ''}">
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            document.getElementById('editCustomFieldsList').insertAdjacentHTML('beforeend', fieldHtml);
+
+            // Add event listener for type change
+            const typeSelect = document.querySelector(`#${fieldId} .edit-custom-field-type`);
+            typeSelect.addEventListener('change', function() {
+                const optionsRow = document.querySelector(`#${fieldId} .edit-dropdown-options`);
+                optionsRow.style.display = this.value === 'select' ? 'block' : 'none';
+            });
+
+            // Add event listener for remove button
+            const removeBtn = document.querySelector(`#${fieldId} .remove-edit-field-btn`);
+            removeBtn.addEventListener('click', function() {
+                document.getElementById(fieldId).remove();
+            });
+        }
+
+        // Get edited custom fields
+        function getEditedCustomFields() {
+            const fields = [];
+            document.querySelectorAll('#editCustomFieldsList .custom-field-item').forEach(item => {
+                const label = item.querySelector('.edit-custom-field-label').value;
+                const type = item.querySelector('.edit-custom-field-type').value;
+                const required = item.querySelector('.edit-custom-field-required').value === 'true';
+                const options = item.querySelector('.edit-field-options')?.value;
+
+                if (label) {
+                    const field = {
+                        fieldName: label.toLowerCase().replace(/\s+/g, '_'),
+                        label: label,
+                        fieldType: type,
+                        required: required
+                    };
+
+                    if (type === 'select' && options) {
+                        field.options = options.split(',').map(o => o.trim()).filter(o => o);
+                    }
+
+                    fields.push(field);
+                }
+            });
+            return fields;
+        }
+
+        // Update meeting
+        async function updateMeeting() {
+            try {
+                const updateBtn = document.getElementById('updateMeetingBtn');
+                updateBtn.disabled = true;
+                updateBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Updating...';
+
+                // Build required fields array
+                const requiredFieldsArray = [{ field: 'fullName', isRequired: true }];
+                if (document.getElementById('editRequireEmail').checked) {
+                    requiredFieldsArray.push({ field: 'email', isRequired: true });
+                }
+                if (document.getElementById('editRequirePhone').checked) {
+                    requiredFieldsArray.push({ field: 'phone', isRequired: true });
+                }
+                if (document.getElementById('editRequireIdNumber').checked) {
+                    requiredFieldsArray.push({ field: 'idNumber', isRequired: true });
+                }
+
+                const customFields = getEditedCustomFields();
+
+                const meetingData = {
+                    title: document.getElementById('editMeetingTitle').value,
+                    description: document.getElementById('editMeetingDescription').value,
+                    schedule: {
+                        startTime: document.getElementById('editMeetingStartTime').value,
+                        endTime: document.getElementById('editMeetingEndTime').value
+                    },
+                    location: {
+                        name: document.getElementById('editMeetingLocationName').value,
+                        latitude: parseFloat(document.getElementById('editMeetingLatitude').value),
+                        longitude: parseFloat(document.getElementById('editMeetingLongitude').value),
+                        radius: parseInt(document.getElementById('editMeetingRadius').value)
+                    },
+                    attendanceConfig: {
+                        allowedModes: {
+                            smartphoneGPS: document.getElementById('editAllowSmartphoneGPS').checked,
+                            sms: document.getElementById('editAllowSMSMode').checked,
+                            ussd: document.getElementById('editAllowUSSDMode').checked,
+                            kiosk: false,
+                            manual: false
+                        },
+                        requiredFields: requiredFieldsArray,
+                        verificationStrictness: 'medium',
+                        duplicatePrevention: {
+                            preventSameDevice: true,
+                            preventSamePhone: true,
+                            preventSameNameTime: true,
+                            timeWindowMinutes: 5
+                        }
+                    },
+                    customFormFields: customFields
+                };
+
+                console.log('Updating meeting with data:', meetingData);
+
+                const response = await fetch(`${API_BASE_URL}/meetings/${editingMeetingId}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${authToken}`
+                    },
+                    body: JSON.stringify(meetingData)
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    showAlert('Meeting updated successfully!', 'success');
+                    bootstrap.Modal.getInstance(document.getElementById('editMeetingModal')).hide();
+                    loadMeetings();
+                    loadDashboardData();
+                } else {
+                    console.error('Meeting update failed:', result);
+                    showAlert(result.error || 'Failed to update meeting', 'danger');
+                }
+            } catch (error) {
+                console.error('Error updating meeting:', error);
+                showAlert('Error updating meeting: ' + error.message, 'danger');
+            } finally {
+                const updateBtn = document.getElementById('updateMeetingBtn');
+                updateBtn.disabled = false;
+                updateBtn.innerHTML = '<i class="fas fa-save me-2"></i> Update Meeting';
             }
         }
 
@@ -2572,6 +2922,19 @@
                 addCustomFieldBtn.addEventListener('click', addCustomField);
             }
 
+            // Edit meeting modal buttons
+            const editAddCustomFieldBtn = document.getElementById('editAddCustomFieldBtn');
+            if (editAddCustomFieldBtn) {
+                editAddCustomFieldBtn.addEventListener('click', function() {
+                    addEditCustomField();
+                });
+            }
+
+            const updateMeetingBtn = document.getElementById('updateMeetingBtn');
+            if (updateMeetingBtn) {
+                updateMeetingBtn.addEventListener('click', updateMeeting);
+            }
+
             // Setup event delegation for meeting action buttons
             const meetingsTable = document.getElementById('meetingsTable');
             if (meetingsTable) {
@@ -2581,6 +2944,14 @@
                     if (viewBtn) {
                         const meetingId = viewBtn.getAttribute('data-meeting-id');
                         viewMeetingDetails(meetingId);
+                        return;
+                    }
+
+                    // Edit meeting
+                    const editBtn = e.target.closest('.edit-meeting-btn');
+                    if (editBtn) {
+                        const meetingId = editBtn.getAttribute('data-meeting-id');
+                        editMeeting(meetingId);
                         return;
                     }
 
