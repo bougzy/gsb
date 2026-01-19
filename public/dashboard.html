@@ -1354,11 +1354,18 @@
                 });
 
                 if (statsResponse.ok) {
-                    const stats = await statsResponse.json();
+                    const data = await statsResponse.json();
+                    console.log('Dashboard stats received:', data);
+
+                    // Extract stats from summary object
+                    const stats = data.summary || data;
+
                     document.getElementById('totalMeetings').textContent = stats.totalMeetings || 0;
                     document.getElementById('activeMeetings').textContent = stats.activeMeetings || 0;
                     document.getElementById('totalAttendance').textContent = stats.totalAttendance || 0;
                     document.getElementById('todayAttendance').textContent = stats.todayAttendance || 0;
+                } else {
+                    console.error('Failed to load dashboard stats:', await statsResponse.text());
                 }
 
                 // Load upcoming meetings
@@ -1368,6 +1375,11 @@
                 initializeChart();
             } catch (error) {
                 console.error('Error loading dashboard data:', error);
+                // Set defaults on error
+                document.getElementById('totalMeetings').textContent = '0';
+                document.getElementById('activeMeetings').textContent = '0';
+                document.getElementById('totalAttendance').textContent = '0';
+                document.getElementById('todayAttendance').textContent = '0';
             }
         }
 

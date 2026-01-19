@@ -5203,47 +5203,53 @@ app.get('/api/meetings/:meetingId/location-analytics', authenticateToken, async 
 // 8. Dashboard & Analytics Routes
 app.get('/api/dashboard/stats', authenticateToken, async (req, res) => {
   try {
+    const orgId = req.user.organizationId._id;
+    console.log('Fetching dashboard stats for organization:', orgId);
+
     const now = new Date();
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-    
+
     // Get total meetings
     const totalMeetings = await Meeting.countDocuments({
-      organizationId: req.user.organizationId._id
+      organizationId: orgId
     });
+    console.log('Total meetings:', totalMeetings);
     
-    // Get active meetings
+    // Get active meetings (includes both 'active' and 'in_progress')
     const activeMeetings = await Meeting.countDocuments({
-      organizationId: req.user.organizationId._id,
-      status: 'in_progress'
+      organizationId: orgId,
+      status: { $in: ['active', 'in_progress'] }
     });
+    console.log('Active meetings:', activeMeetings);
     
     // Get upcoming meetings
     const upcomingMeetings = await Meeting.countDocuments({
-      organizationId: req.user.organizationId._id,
+      organizationId: orgId,
       'schedule.startTime': { $gt: now },
       status: { $in: ['draft', 'active'] }
     });
-    
-    // Get total attendance records
+
+    // Get total attendance records (all time, not just last 30 days)
     const totalAttendance = await AttendanceRecord.countDocuments({
-      organizationId: req.user.organizationId._id,
-      createdAt: { $gte: thirtyDaysAgo }
+      organizationId: orgId
     });
+    console.log('Total attendance:', totalAttendance);
     
     // Get today's attendance
     const todayStart = new Date(now.setHours(0, 0, 0, 0));
     const todayEnd = new Date(now.setHours(23, 59, 59, 999));
     
     const todayAttendance = await AttendanceRecord.countDocuments({
-      organizationId: req.user.organizationId._id,
+      organizationId: orgId,
       createdAt: { $gte: todayStart, $lte: todayEnd }
     });
+    console.log('Today attendance:', todayAttendance);
     
     // Get attendance by type
     const attendanceByType = await AttendanceRecord.aggregate([
       {
         $match: {
-          organizationId: req.user.organizationId._id,
+          organizationId: orgId,
           createdAt: { $gte: thirtyDaysAgo }
         }
       },
@@ -5254,17 +5260,17 @@ app.get('/api/dashboard/stats', authenticateToken, async (req, res) => {
         }
       }
     ]);
-    
+
     // Get recent attendance
     const recentAttendance = await AttendanceRecord.find({
-      organizationId: req.user.organizationId._id
+      organizationId: orgId
     })
     .populate('meetingId', 'title')
     .sort({ createdAt: -1 })
     .limit(10)
     .select('attendeeInfo.fullName verificationType status createdAt');
     
-    res.json({
+    const response = {
       summary: {
         totalMeetings,
         activeMeetings,
@@ -5274,7 +5280,10 @@ app.get('/api/dashboard/stats', authenticateToken, async (req, res) => {
       },
       byType: attendanceByType,
       recentAttendance
-    });
+    };
+
+    console.log('Sending dashboard stats:', response.summary);
+    res.json(response);
     
   } catch (error) {
     console.error('Dashboard stats error:', error);
