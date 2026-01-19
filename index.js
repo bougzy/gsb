@@ -3209,82 +3209,90 @@ app.post('/api/attend/smartphone', async (req, res) => {
       }
     }
     
-    // STRICT LOCATION VALIDATION
-    const locationValidation = validateLocation(
-      locationData.latitude,
-      locationData.longitude,
-      meeting.location.latitude,
-      meeting.location.longitude,
-      meeting.location.radius,
-      locationData.accuracy
-    );
-    
-    // Check for previous locations from this device
-    const previousAttendance = await AttendanceRecord.findOne({
-      'deviceInfo.deviceId': deviceInfo?.deviceId,
-      'meetingId': meeting._id
-    }).sort({ createdAt: -1 });
-    
-    // Detect location spoofing
-    const spoofingDetection = detectLocationSpoofing(
-      locationData,
-      previousAttendance ? [previousAttendance.locationData.coordinates] : []
-    );
-    
-    // Apply strictness level from meeting config
-    let locationAccepted = false;
-    let rejectionReason = '';
-    
-    switch(meeting.attendanceConfig.verificationStrictness) {
-      case 'low':
-        locationAccepted = locationValidation.checks.accuracyAdjustedCheck;
-        break;
-      case 'medium':
-        locationAccepted = locationValidation.checks.basicRadiusCheck;
-        if (spoofingDetection.riskLevel === 'high') {
-          locationAccepted = false;
-          rejectionReason = 'Suspicious location detected';
-        }
-        break;
-      case 'high':
-        locationAccepted = locationValidation.checks.strictCheck && 
-                          !spoofingDetection.isSuspicious &&
-                          locationValidation.checks.validCoordinates &&
-                          locationData.accuracy < 50; // Require good accuracy
-        if (!locationAccepted) {
-          rejectionReason = 'Strict location verification failed';
-        }
-        break;
-      default:
-        locationAccepted = locationValidation.checks.basicRadiusCheck;
-    }
-    
-    if (!locationAccepted) {
-      return res.status(403).json({ 
-        error: 'Location verification failed',
-        details: rejectionReason || 'Your location does not match the meeting venue',
-        validation: {
-          ...locationValidation,
-          spoofingDetection,
-          meetingLocation: {
-            latitude: meeting.location.latitude,
-            longitude: meeting.location.longitude,
-            radius: meeting.location.radius,
-            address: meeting.location.address
-          },
-          yourLocation: {
-            latitude: locationData.latitude,
-            longitude: locationData.longitude,
-            accuracy: locationData.accuracy
+    // LOCATION VALIDATION (skip in development or if disabled via env var)
+    const skipLocationValidation = process.env.SKIP_LOCATION_VALIDATION === 'true' ||
+                                   process.env.NODE_ENV === 'development';
+
+    if (!skipLocationValidation) {
+      // STRICT LOCATION VALIDATION
+      const locationValidation = validateLocation(
+        locationData.latitude,
+        locationData.longitude,
+        meeting.location.latitude,
+        meeting.location.longitude,
+        meeting.location.radius,
+        locationData.accuracy
+      );
+
+      // Check for previous locations from this device
+      const previousAttendance = await AttendanceRecord.findOne({
+        'deviceInfo.deviceId': deviceInfo?.deviceId,
+        'meetingId': meeting._id
+      }).sort({ createdAt: -1 });
+
+      // Detect location spoofing
+      const spoofingDetection = detectLocationSpoofing(
+        locationData,
+        previousAttendance ? [previousAttendance.locationData.coordinates] : []
+      );
+
+      // Apply strictness level from meeting config
+      let locationAccepted = false;
+      let rejectionReason = '';
+
+      switch(meeting.attendanceConfig.verificationStrictness) {
+        case 'low':
+          locationAccepted = locationValidation.checks.accuracyAdjustedCheck;
+          break;
+        case 'medium':
+          locationAccepted = locationValidation.checks.basicRadiusCheck;
+          if (spoofingDetection.riskLevel === 'high') {
+            locationAccepted = false;
+            rejectionReason = 'Suspicious location detected';
           }
-        },
-        suggestions: [
-          'Enable high-accuracy GPS mode',
-          'Move closer to the meeting venue',
-          'Ensure location services are enabled',
-          'Try again in a different location'
-        ]
-      });
+          break;
+        case 'high':
+          locationAccepted = locationValidation.checks.strictCheck &&
+                            !spoofingDetection.isSuspicious &&
+                            locationValidation.checks.validCoordinates &&
+                            locationData.accuracy < 50; // Require good accuracy
+          if (!locationAccepted) {
+            rejectionReason = 'Strict location verification failed';
+          }
+          break;
+        default:
+          locationAccepted = locationValidation.checks.basicRadiusCheck;
+      }
+
+      if (!locationAccepted) {
+        return res.status(403).json({
+          error: 'Location verification failed',
+          details: rejectionReason || 'Your location does not match the meeting venue',
+          validation: {
+            ...locationValidation,
+            spoofingDetection,
+            meetingLocation: {
+              latitude: meeting.location.latitude,
+              longitude: meeting.location.longitude,
+              radius: meeting.location.radius,
+              address: meeting.location.address
+            },
+            yourLocation: {
+              latitude: locationData.latitude,
+              longitude: locationData.longitude,
+              accuracy: locationData.accuracy
+            }
+          },
+          suggestions: [
+            'Enable high-accuracy GPS mode',
+            'Move closer to the meeting venue',
+            'Ensure location services are enabled',
+            'Try again in a different location'
+          ]
+        });
+      }
+    } else {
+      console.log('⚠️  Location validation SKIPPED (development mode or SKIP_LOCATION_VALIDATION=true)');
     }
     
     // Check for duplicates
