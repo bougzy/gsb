@@ -3101,13 +3101,17 @@ app.get('/api/meetings/:publicCode/form', async (req, res) => {
       return res.status(404).json({ error: 'Meeting not found or not active' });
     }
     
-    // Check time window
+    // Check time window (skip in development or if disabled)
     const now = new Date();
-    if (now < meeting.schedule.attendanceStart || now > meeting.schedule.attendanceEnd) {
-      return res.status(403).json({ 
+    const skipTimeValidation = process.env.SKIP_TIME_VALIDATION === 'true' ||
+                               process.env.NODE_ENV === 'development';
+
+    if (!skipTimeValidation && (now < meeting.schedule.attendanceStart || now > meeting.schedule.attendanceEnd)) {
+      return res.status(403).json({
         error: 'Attendance form not available at this time',
         availableFrom: meeting.schedule.attendanceStart,
-        availableUntil: meeting.schedule.attendanceEnd
+        availableUntil: meeting.schedule.attendanceEnd,
+        currentTime: now
       });
     }
     
@@ -3182,22 +3186,27 @@ app.post('/api/attend/smartphone', async (req, res) => {
       });
     }
     
-    // Check time window
+    // Check time window (skip in development or if disabled)
     const now = new Date();
-    if (now < meeting.schedule.attendanceStart) {
-      return res.status(403).json({ 
-        error: 'Attendance not yet started',
-        details: `Attendance starts at ${moment(meeting.schedule.attendanceStart).format('h:mm A')}`,
-        availableFrom: meeting.schedule.attendanceStart
-      });
-    }
-    
-    if (now > meeting.schedule.attendanceEnd) {
-      return res.status(403).json({ 
-        error: 'Attendance period has ended',
-        details: `Attendance ended at ${moment(meeting.schedule.attendanceEnd).format('h:mm A')}`,
-        endedAt: meeting.schedule.attendanceEnd
-      });
+    const skipTimeValidation = process.env.SKIP_TIME_VALIDATION === 'true' ||
+                               process.env.NODE_ENV === 'development';
+
+    if (!skipTimeValidation) {
+      if (now < meeting.schedule.attendanceStart) {
+        return res.status(403).json({
+          error: 'Attendance not yet started',
+          details: `Attendance starts at ${moment(meeting.schedule.attendanceStart).format('h:mm A')}`,
+          availableFrom: meeting.schedule.attendanceStart
+        });
+      }
+
+      if (now > meeting.schedule.attendanceEnd) {
+        return res.status(403).json({
+          error: 'Attendance period has ended',
+          details: `Attendance ended at ${moment(meeting.schedule.attendanceEnd).format('h:mm A')}`,
+          endedAt: meeting.schedule.attendanceEnd
+        });
+      }
     }
     
     // STRICT LOCATION VALIDATION
