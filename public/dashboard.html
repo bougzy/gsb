@@ -1062,10 +1062,14 @@
         <div class="modal-dialog modal-xl">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title">Edit Meeting</h5>
+                    <h5 class="modal-title" id="editMeetingModalTitle">Edit Meeting</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
+                    <div class="alert alert-info mb-3">
+                        <i class="fas fa-info-circle me-2"></i>
+                        <strong>Edit Meeting:</strong> Update meeting details, schedule, location, and form fields. Access codes will remain unchanged.
+                    </div>
                     <form id="editMeetingForm">
                         <input type="hidden" id="editMeetingId">
 
@@ -1539,24 +1543,35 @@
                     <td>${meeting.location?.name || 'N/A'}</td>
                     <td><span class="badge bg-${getStatusColor(meeting.status)}">${meeting.status}</span></td>
                     <td>
-                        <button class="btn btn-sm btn-info action-btn view-meeting-btn" data-meeting-id="${meeting._id}" title="View Details">
-                            <i class="fas fa-eye"></i>
-                        </button>
-                        ${meeting.status === 'draft' ? `<button class="btn btn-sm btn-secondary action-btn edit-meeting-btn" data-meeting-id="${meeting._id}" title="Edit Meeting"><i class="fas fa-edit"></i></button>` : ''}
-                        <button class="btn btn-sm btn-primary action-btn copy-link-btn" data-public-code="${meeting.accessCodes?.publicCode || ''}" title="Copy Link">
-                            <i class="fas fa-link"></i>
-                        </button>
-                        <button class="btn btn-sm btn-success action-btn qr-code-btn" data-meeting-id="${meeting._id}" title="QR Code">
-                            <i class="fas fa-qrcode"></i>
-                        </button>
-                        <button class="btn btn-sm btn-warning action-btn view-attendance-btn" data-meeting-id="${meeting._id}" title="View Attendance">
-                            <i class="fas fa-users"></i>
-                        </button>
-                        ${meeting.status === 'draft' ? `<button class="btn btn-sm btn-success action-btn activate-meeting-btn" data-meeting-id="${meeting._id}" title="Activate"><i class="fas fa-play"></i></button>` : ''}
-                        ${meeting.status === 'active' ? `<button class="btn btn-sm btn-danger action-btn end-meeting-btn" data-meeting-id="${meeting._id}" title="End Meeting"><i class="fas fa-stop"></i></button>` : ''}
-                        <button class="btn btn-sm btn-danger action-btn delete-meeting-btn" data-meeting-id="${meeting._id}" title="Delete Meeting">
-                            <i class="fas fa-trash"></i>
-                        </button>
+                        <div class="btn-group" role="group">
+                            <button class="btn btn-sm btn-info action-btn view-meeting-btn" data-meeting-id="${meeting._id}" title="View Details">
+                                <i class="fas fa-eye"></i>
+                            </button>
+                            ${(meeting.status === 'draft' || meeting.status === 'active') ? `
+                            <button class="btn btn-sm btn-warning action-btn edit-meeting-btn" data-meeting-id="${meeting._id}" title="Edit Meeting">
+                                <i class="fas fa-edit"></i> Edit
+                            </button>` : ''}
+                        </div>
+                        <div class="btn-group ms-1" role="group">
+                            <button class="btn btn-sm btn-primary action-btn copy-link-btn" data-public-code="${meeting.accessCodes?.publicCode || ''}" title="Copy Link">
+                                <i class="fas fa-link"></i>
+                            </button>
+                            <button class="btn btn-sm btn-success action-btn qr-code-btn" data-meeting-id="${meeting._id}" title="QR Code">
+                                <i class="fas fa-qrcode"></i>
+                            </button>
+                        </div>
+                        <div class="btn-group ms-1" role="group">
+                            <button class="btn btn-sm btn-secondary action-btn view-attendance-btn" data-meeting-id="${meeting._id}" title="View Attendance">
+                                <i class="fas fa-users"></i>
+                            </button>
+                        </div>
+                        <div class="btn-group ms-1" role="group">
+                            ${meeting.status === 'draft' ? `<button class="btn btn-sm btn-success action-btn activate-meeting-btn" data-meeting-id="${meeting._id}" title="Activate"><i class="fas fa-play"></i></button>` : ''}
+                            ${meeting.status === 'active' ? `<button class="btn btn-sm btn-danger action-btn end-meeting-btn" data-meeting-id="${meeting._id}" title="End Meeting"><i class="fas fa-stop"></i></button>` : ''}
+                            <button class="btn btn-sm btn-danger action-btn delete-meeting-btn" data-meeting-id="${meeting._id}" title="Delete Meeting">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
                     </td>
                 </tr>
             `).join('');
@@ -2011,6 +2026,24 @@
 
                 if (response.ok) {
                     const meeting = await response.json();
+
+                    // Warn if meeting is active
+                    if (meeting.status === 'active' || meeting.status === 'in_progress') {
+                        const proceed = confirm(
+                            '⚠️ WARNING: This meeting is currently active!\n\n' +
+                            'Editing an active meeting may affect attendees who are currently registering.\n\n' +
+                            'Recommended actions:\n' +
+                            '• End the meeting first, then create a new one\n' +
+                            '• Or only make minor adjustments\n\n' +
+                            'Do you want to proceed with editing?'
+                        );
+                        if (!proceed) {
+                            return;
+                        }
+                    }
+
+                    // Update modal title
+                    document.getElementById('editMeetingModalTitle').textContent = `Edit Meeting: ${meeting.title}`;
 
                     // Populate form fields
                     document.getElementById('editMeetingId').value = meeting._id;
