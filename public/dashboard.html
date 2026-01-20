@@ -1183,35 +1183,79 @@
                             <input type="text" class="form-control" id="editMeetingLocationName" required>
                         </div>
 
-                        <!-- Location Helper Tools (Edit Mode) -->
+                        <!-- Location Helper Tools (Edit Mode) - Enhanced -->
                         <div class="mb-3">
                             <label class="form-label fw-bold">📍 Update Location Coordinates</label>
-                            <div class="d-flex gap-2 flex-wrap mb-2">
-                                <button type="button" class="btn btn-sm btn-primary" onclick="useCurrentLocationEdit()">
-                                    <i class="fas fa-location-arrow me-1"></i> Use My Current Location
-                                </button>
-                                <button type="button" class="btn btn-sm btn-info" onclick="searchAddressEdit()">
-                                    <i class="fas fa-search me-1"></i> Search Address
-                                </button>
-                                <button type="button" class="btn btn-sm btn-success" onclick="showLocationExamplesEdit()">
-                                    <i class="fas fa-map-marked-alt me-1"></i> Popular Locations
-                                </button>
-                            </div>
-                            <div id="locationHelperMessageEdit"></div>
-                        </div>
 
-                        <!-- Address Search (Edit Mode, hidden by default) -->
-                        <div id="addressSearchBoxEdit" class="mb-3" style="display: none;">
-                            <div class="input-group">
-                                <input type="text" class="form-control" id="addressSearchInputEdit" placeholder="Enter address (e.g., 'Lagos Island, Nigeria')">
-                                <button class="btn btn-outline-primary" type="button" onclick="geocodeAddressEdit()">
-                                    <i class="fas fa-search"></i> Find
-                                </button>
-                                <button class="btn btn-outline-secondary" type="button" onclick="closeAddressSearchEdit()">
-                                    <i class="fas fa-times"></i>
-                                </button>
+                            <!-- Location Tabs -->
+                            <ul class="nav nav-tabs mb-3" id="locationTabsEdit" role="tablist">
+                                <li class="nav-item" role="presentation">
+                                    <button class="nav-link active" id="gps-tab-edit" data-bs-toggle="tab" data-bs-target="#gps-panel-edit" type="button" role="tab">
+                                        <i class="fas fa-location-arrow me-1"></i> My Current Location
+                                    </button>
+                                </li>
+                                <li class="nav-item" role="presentation">
+                                    <button class="nav-link" id="search-tab-edit" data-bs-toggle="tab" data-bs-target="#search-panel-edit" type="button" role="tab">
+                                        <i class="fas fa-search me-1"></i> Search Any Location
+                                    </button>
+                                </li>
+                            </ul>
+
+                            <!-- Tab Content -->
+                            <div class="tab-content" id="locationTabContentEdit">
+                                <!-- GPS Tab -->
+                                <div class="tab-pane fade show active" id="gps-panel-edit" role="tabpanel">
+                                    <div class="text-center mb-3">
+                                        <button type="button" class="btn btn-primary" id="useCurrentLocationEditBtn">
+                                            <i class="fas fa-location-arrow me-2"></i>Get My Current Location
+                                        </button>
+                                    </div>
+                                    <div id="locationHelperMessageEdit"></div>
+                                </div>
+
+                                <!-- Search Tab -->
+                                <div class="tab-pane fade" id="search-panel-edit" role="tabpanel">
+                                    <!-- Search Box -->
+                                    <div class="mb-3">
+                                        <div class="input-group">
+                                            <input type="text" class="form-control" id="addressSearchInputEdit"
+                                                   placeholder="Search any location worldwide (e.g., 'Eko Hotel Lagos')">
+                                            <button class="btn btn-primary" type="button" id="geocodeAddressEditBtn">
+                                                <i class="fas fa-search me-1"></i> Search
+                                            </button>
+                                        </div>
+                                        <small class="text-muted">Enter landmark, address, city, or popular location</small>
+                                    </div>
+
+                                    <!-- Quick Search Buttons -->
+                                    <div class="mb-3">
+                                        <label class="form-label text-muted small">Quick Search (Popular Nigerian Locations):</label>
+                                        <div class="d-flex gap-2 flex-wrap">
+                                            <button type="button" class="btn btn-sm btn-outline-primary quick-search-btn-edit" data-query="Eko Hotel Victoria Island Lagos">
+                                                Eko Hotel, Lagos
+                                            </button>
+                                            <button type="button" class="btn btn-sm btn-outline-primary quick-search-btn-edit" data-query="National Mosque Abuja Nigeria">
+                                                National Mosque, Abuja
+                                            </button>
+                                            <button type="button" class="btn btn-sm btn-outline-primary quick-search-btn-edit" data-query="University of Lagos Akoka">
+                                                UNILAG, Lagos
+                                            </button>
+                                            <button type="button" class="btn btn-sm btn-outline-primary quick-search-btn-edit" data-query="Murtala Muhammed Airport Lagos">
+                                                MMA, Lagos
+                                            </button>
+                                            <button type="button" class="btn btn-sm btn-outline-primary quick-search-btn-edit" data-query="Ikeja City Mall Lagos">
+                                                Ikeja City Mall
+                                            </button>
+                                            <button type="button" class="btn btn-sm btn-outline-primary quick-search-btn-edit" data-query="Port Harcourt Nigeria">
+                                                Port Harcourt
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <!-- Search Results -->
+                                    <div id="searchResultsMessageEdit"></div>
+                                </div>
                             </div>
-                            <small class="text-muted">Enter full address with city and country for best results</small>
                         </div>
 
                         <div class="row">
@@ -2282,6 +2326,69 @@
                 console.error('Geocoding error:', error);
                 messageDiv.innerHTML = '<div class="alert alert-danger">Error searching for address. Please try again.</div>';
             }
+        }
+
+        // Geocode address from Search tab (Edit mode)
+        async function geocodeAddressSearchEdit() {
+            const address = document.getElementById('addressSearchInputEdit').value.trim();
+            const messageDiv = document.getElementById('searchResultsMessageEdit');
+
+            if (!address) {
+                messageDiv.innerHTML = '<div class="alert alert-warning">Please enter a location to search</div>';
+                return;
+            }
+
+            messageDiv.innerHTML = '<div class="alert alert-info"><i class="fas fa-spinner fa-spin me-2"></i>Searching for location...</div>';
+
+            try {
+                // Using Nominatim (OpenStreetMap) free geocoding API
+                const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&limit=1&addressdetails=1`);
+                const data = await response.json();
+
+                if (data && data.length > 0) {
+                    const lat = parseFloat(data[0].lat);
+                    const lon = parseFloat(data[0].lon);
+                    const displayName = data[0].display_name;
+
+                    // Fill in the coordinates
+                    document.getElementById('editMeetingLatitude').value = lat.toFixed(6);
+                    document.getElementById('editMeetingLongitude').value = lon.toFixed(6);
+
+                    // Optionally set location name if empty
+                    if (!document.getElementById('editMeetingLocationName').value) {
+                        document.getElementById('editMeetingLocationName').value = displayName.split(',')[0];
+                    }
+
+                    messageDiv.innerHTML = `<div class="alert alert-success">
+                        <i class="fas fa-check-circle me-2"></i><strong>Location Found!</strong>
+                        <br>${displayName}
+                        <br><small>Latitude: ${lat.toFixed(6)}, Longitude: ${lon.toFixed(6)}</small>
+                        <br><a href="https://www.google.com/maps?q=${lat},${lon}" target="_blank" class="btn btn-sm btn-outline-primary mt-2">
+                            <i class="fas fa-map-marked-alt me-1"></i>View on Google Maps
+                        </a>
+                    </div>`;
+                } else {
+                    messageDiv.innerHTML = `<div class="alert alert-warning">
+                        <i class="fas fa-exclamation-triangle me-2"></i>Location not found.
+                        <br><small>Try adding more details like city and country (e.g., "Eko Hotel Lagos Nigeria")</small>
+                    </div>`;
+                }
+            } catch (error) {
+                console.error('Geocoding error:', error);
+                messageDiv.innerHTML = '<div class="alert alert-danger">Error searching for address. Please check your internet connection and try again.</div>';
+            }
+        }
+
+        // Quick search for popular locations (Edit mode)
+        async function quickSearchLocationEdit(query) {
+            const messageDiv = document.getElementById('searchResultsMessageEdit');
+            const addressInput = document.getElementById('addressSearchInputEdit');
+
+            // Set the query in the input field
+            addressInput.value = query;
+
+            // Run the search
+            await geocodeAddressSearchEdit();
         }
 
         // Show popular locations (Create mode)
@@ -3440,12 +3547,45 @@
                 });
             }
 
-            // Quick search buttons
+            // Quick search buttons (Create mode)
             const quickSearchBtns = document.querySelectorAll('.quick-search-btn');
             quickSearchBtns.forEach(btn => {
                 btn.addEventListener('click', function() {
                     const query = this.getAttribute('data-query');
                     quickSearchLocation(query);
+                });
+            });
+
+            // Edit Modal - Location Helper Event Listeners (CSP-compliant)
+            // Get My Current Location button (Edit)
+            const useCurrentLocationEditBtn = document.getElementById('useCurrentLocationEditBtn');
+            if (useCurrentLocationEditBtn) {
+                useCurrentLocationEditBtn.addEventListener('click', useCurrentLocationEdit);
+            }
+
+            // Geocode Address button (Edit Search tab)
+            const geocodeAddressEditBtn = document.getElementById('geocodeAddressEditBtn');
+            if (geocodeAddressEditBtn) {
+                geocodeAddressEditBtn.addEventListener('click', geocodeAddressSearchEdit);
+            }
+
+            // Address search input - allow Enter key (Edit)
+            const addressSearchInputEdit = document.getElementById('addressSearchInputEdit');
+            if (addressSearchInputEdit) {
+                addressSearchInputEdit.addEventListener('keypress', function(e) {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        geocodeAddressSearchEdit();
+                    }
+                });
+            }
+
+            // Quick search buttons (Edit mode)
+            const quickSearchBtnsEdit = document.querySelectorAll('.quick-search-btn-edit');
+            quickSearchBtnsEdit.forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const query = this.getAttribute('data-query');
+                    quickSearchLocationEdit(query);
                 });
             });
 
