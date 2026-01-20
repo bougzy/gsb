@@ -3309,9 +3309,13 @@
 
         // Setup event delegation for attendance action buttons
         function setupAttendanceActionListeners() {
-            const tbody = document.querySelector('#attendanceTable tbody');
-            if (!tbody) return;
+            const tbody = document.getElementById('attendanceTable');
+            if (!tbody) {
+                console.error('Attendance table tbody not found');
+                return;
+            }
 
+            console.log('Setting up attendance action listeners');
             // Remove old listener if exists
             tbody.removeEventListener('click', handleAttendanceAction);
             // Add new listener
@@ -3320,13 +3324,23 @@
 
         // Handle attendance action button clicks
         function handleAttendanceAction(e) {
+            console.log('Click detected on attendance table', e.target);
+
             const button = e.target.closest('button[data-attendance-id]');
-            if (!button) return;
+            if (!button) {
+                console.log('No button with data-attendance-id found');
+                return;
+            }
 
             const attendanceId = button.dataset.attendanceId;
             const action = button.dataset.action;
 
-            if (!attendanceId || !action) return;
+            console.log('Button clicked:', { attendanceId, action });
+
+            if (!attendanceId || !action) {
+                console.error('Missing attendanceId or action');
+                return;
+            }
 
             if (action === 'details') {
                 viewAttendanceDetails(attendanceId);
