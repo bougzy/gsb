@@ -3280,22 +3280,22 @@
                         <td><span class="badge bg-${durationBadge}">${durationText}</span></td>
                         <td><span class="badge bg-${getStatusColor(record.verificationStatus || record.status)}">${record.verificationStatus || record.status}</span></td>
                         <td>
-                            <div class="btn-group" role="group">
-                                <!-- Quick Actions -->
-                                <button class="btn btn-sm btn-success action-btn" onclick="updateAttendanceStatus('${record._id}', 'verified')" title="Verify">
-                                    <i class="fas fa-check"></i>
+                            <div class="d-flex gap-1 flex-wrap">
+                                <!-- Admin Action Buttons with Text Labels -->
+                                <button class="btn btn-sm btn-success" onclick="updateAttendanceStatus('${record._id}', 'verified')" title="Approve this attendance">
+                                    <i class="fas fa-check me-1"></i>Verify
                                 </button>
-                                <button class="btn btn-sm btn-warning action-btn" onclick="updateAttendanceStatus('${record._id}', 'pending')" title="Set Pending">
-                                    <i class="fas fa-clock"></i>
+                                <button class="btn btn-sm btn-warning" onclick="updateAttendanceStatus('${record._id}', 'pending')" title="Move back to pending for review">
+                                    <i class="fas fa-clock me-1"></i>Pending
                                 </button>
-                                <button class="btn btn-sm btn-danger action-btn" onclick="updateAttendanceStatus('${record._id}', 'rejected')" title="Reject">
-                                    <i class="fas fa-times"></i>
+                                <button class="btn btn-sm btn-danger" onclick="updateAttendanceStatus('${record._id}', 'rejected')" title="Reject this attendance">
+                                    <i class="fas fa-times me-1"></i>Reject
                                 </button>
-                                <button class="btn btn-sm btn-secondary action-btn" onclick="updateAttendanceStatus('${record._id}', 'flagged')" title="Flag for Review">
-                                    <i class="fas fa-flag"></i>
+                                <button class="btn btn-sm btn-secondary" onclick="updateAttendanceStatus('${record._id}', 'flagged')" title="Flag as suspicious for investigation">
+                                    <i class="fas fa-flag me-1"></i>Flag
                                 </button>
-                                <button class="btn btn-sm btn-info action-btn" onclick="viewAttendanceDetails('${record._id}')" title="View Details">
-                                    <i class="fas fa-eye"></i>
+                                <button class="btn btn-sm btn-info" onclick="viewAttendanceDetails('${record._id}')" title="View complete details">
+                                    <i class="fas fa-eye me-1"></i>Details
                                 </button>
                             </div>
                         </td>
@@ -3347,9 +3347,200 @@
         }
 
         // View attendance details
-        function viewAttendanceDetails(attendanceId) {
-            // You can implement a detailed view modal here
-            alert('Attendance details for ID: ' + attendanceId);
+        async function viewAttendanceDetails(attendanceId, recordData) {
+            try {
+                // Fetch full attendance details from API
+                const response = await fetch(`${API_BASE_URL}/attendance/${attendanceId}`, {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+
+                if (!response.ok) {
+                    showAlert('Failed to load attendance details', 'danger');
+                    return;
+                }
+
+                const attendance = await response.json();
+
+                // Calculate duration
+                let durationText = 'N/A';
+                if (attendance.timeTracking?.checkInTime) {
+                    const checkIn = new Date(attendance.timeTracking.checkInTime);
+                    const checkOut = attendance.timeTracking.checkOutTime ?
+                        new Date(attendance.timeTracking.checkOutTime) : new Date();
+                    const durationMinutes = Math.floor((checkOut - checkIn) / 60000);
+                    const hours = Math.floor(durationMinutes / 60);
+                    const mins = durationMinutes % 60;
+                    durationText = hours > 0 ? `${hours}h ${mins}m` : `${mins} minutes`;
+                }
+
+                // Build detailed info display
+                const detailsHTML = `
+                    <div class="modal fade" id="attendanceDetailsModal" tabindex="-1">
+                        <div class="modal-dialog modal-lg">
+                            <div class="modal-content">
+                                <div class="modal-header">
+                                    <h5 class="modal-title">
+                                        <i class="fas fa-user-check me-2"></i>Attendance Details
+                                    </h5>
+                                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                </div>
+                                <div class="modal-body">
+                                    <!-- Attendee Information -->
+                                    <h6 class="fw-bold mb-3">
+                                        <i class="fas fa-user me-2"></i>Attendee Information
+                                    </h6>
+                                    <div class="row mb-3">
+                                        <div class="col-md-6">
+                                            <strong>Name:</strong> ${attendance.attendeeInfo?.fullName || 'N/A'}
+                                        </div>
+                                        <div class="col-md-6">
+                                            <strong>Email:</strong> ${attendance.attendeeInfo?.email || 'N/A'}
+                                        </div>
+                                        <div class="col-md-6 mt-2">
+                                            <strong>Phone:</strong> ${attendance.attendeeInfo?.phone || 'N/A'}
+                                        </div>
+                                        <div class="col-md-6 mt-2">
+                                            <strong>ID Number:</strong> ${attendance.attendeeInfo?.idNumber || 'N/A'}
+                                        </div>
+                                    </div>
+
+                                    <hr>
+
+                                    <!-- Verification Details -->
+                                    <h6 class="fw-bold mb-3">
+                                        <i class="fas fa-check-circle me-2"></i>Verification Details
+                                    </h6>
+                                    <div class="row mb-3">
+                                        <div class="col-md-6">
+                                            <strong>Status:</strong>
+                                            <span class="badge bg-${getStatusColor(attendance.status)}">${attendance.status}</span>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <strong>Method:</strong>
+                                            <span class="badge bg-info">${attendance.verificationType || 'N/A'}</span>
+                                        </div>
+                                        <div class="col-md-6 mt-2">
+                                            <strong>Confidence Score:</strong> ${attendance.verificationDetails?.confidenceScore?.toFixed(1) || 'N/A'}%
+                                        </div>
+                                        <div class="col-md-6 mt-2">
+                                            <strong>Verification Time:</strong> ${attendance.verificationDetails?.verificationTimestamp ?
+                                                new Date(attendance.verificationDetails.verificationTimestamp).toLocaleString() : 'N/A'}
+                                        </div>
+                                    </div>
+
+                                    <hr>
+
+                                    <!-- Time Tracking -->
+                                    <h6 class="fw-bold mb-3">
+                                        <i class="fas fa-clock me-2"></i>Time Tracking
+                                    </h6>
+                                    <div class="row mb-3">
+                                        <div class="col-md-6">
+                                            <strong>Check-In:</strong> ${attendance.timeTracking?.checkInTime ?
+                                                new Date(attendance.timeTracking.checkInTime).toLocaleString() : 'N/A'}
+                                        </div>
+                                        <div class="col-md-6">
+                                            <strong>Check-Out:</strong> ${attendance.timeTracking?.checkOutTime ?
+                                                new Date(attendance.timeTracking.checkOutTime).toLocaleString() : 'Still present'}
+                                        </div>
+                                        <div class="col-md-6 mt-2">
+                                            <strong>Duration:</strong> ${durationText}
+                                        </div>
+                                        <div class="col-md-6 mt-2">
+                                            <strong>Required Stay:</strong> ${attendance.verificationDetails?.minimumStayRequired || 0} minutes
+                                        </div>
+                                        <div class="col-md-6 mt-2">
+                                            <strong>Meets Requirement:</strong>
+                                            ${attendance.timeTracking?.meetsTimeRequirement ?
+                                                '<span class="badge bg-success">Yes ✓</span>' :
+                                                '<span class="badge bg-danger">No</span>'}
+                                        </div>
+                                    </div>
+
+                                    <hr>
+
+                                    <!-- Location Details -->
+                                    <h6 class="fw-bold mb-3">
+                                        <i class="fas fa-map-marker-alt me-2"></i>Location Details
+                                    </h6>
+                                    <div class="row mb-3">
+                                        <div class="col-md-6">
+                                            <strong>Latitude:</strong> ${attendance.locationData?.coordinates?.latitude?.toFixed(6) || 'N/A'}
+                                        </div>
+                                        <div class="col-md-6">
+                                            <strong>Longitude:</strong> ${attendance.locationData?.coordinates?.longitude?.toFixed(6) || 'N/A'}
+                                        </div>
+                                        <div class="col-md-6 mt-2">
+                                            <strong>GPS Accuracy:</strong> ${attendance.locationData?.coordinates?.accuracy?.toFixed(0) || 'N/A'} meters
+                                        </div>
+                                        <div class="col-md-6 mt-2">
+                                            <strong>Distance from Venue:</strong> ${attendance.locationData?.distanceFromVenue?.toFixed(0) || 'N/A'} meters
+                                        </div>
+                                        <div class="col-md-6 mt-2">
+                                            <strong>Within Radius:</strong>
+                                            ${attendance.locationData?.isWithinRadius ?
+                                                '<span class="badge bg-success">Yes ✓</span>' :
+                                                '<span class="badge bg-danger">No</span>'}
+                                        </div>
+                                        <div class="col-md-12 mt-2">
+                                            <a href="https://www.google.com/maps?q=${attendance.locationData?.coordinates?.latitude},${attendance.locationData?.coordinates?.longitude}"
+                                               target="_blank" class="btn btn-sm btn-outline-primary">
+                                                <i class="fas fa-map me-1"></i>View on Google Maps
+                                            </a>
+                                        </div>
+                                    </div>
+
+                                    <hr>
+
+                                    <!-- Device Information -->
+                                    <h6 class="fw-bold mb-3">
+                                        <i class="fas fa-mobile-alt me-2"></i>Device Information
+                                    </h6>
+                                    <div class="row mb-3">
+                                        <div class="col-md-6">
+                                            <strong>Platform:</strong> ${attendance.deviceInfo?.platform || 'N/A'}
+                                        </div>
+                                        <div class="col-md-6">
+                                            <strong>Browser:</strong> ${attendance.deviceInfo?.browser || 'N/A'}
+                                        </div>
+                                        <div class="col-md-6 mt-2">
+                                            <strong>OS:</strong> ${attendance.deviceInfo?.os || 'N/A'}
+                                        </div>
+                                        <div class="col-md-6 mt-2">
+                                            <strong>Device ID:</strong> <small>${attendance.deviceInfo?.deviceId?.substring(0, 20) || 'N/A'}...</small>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="modal-footer">
+                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+                // Remove existing modal if any
+                const existingModal = document.getElementById('attendanceDetailsModal');
+                if (existingModal) {
+                    existingModal.remove();
+                }
+
+                // Add modal to page
+                document.body.insertAdjacentHTML('beforeend', detailsHTML);
+
+                // Show modal
+                const modal = new bootstrap.Modal(document.getElementById('attendanceDetailsModal'));
+                modal.show();
+
+                // Clean up modal after it's hidden
+                document.getElementById('attendanceDetailsModal').addEventListener('hidden.bs.modal', function () {
+                    this.remove();
+                });
+
+            } catch (error) {
+                console.error('Error loading attendance details:', error);
+                showAlert('Error loading attendance details', 'danger');
+            }
         }
 
         // Load meetings for filter dropdown
