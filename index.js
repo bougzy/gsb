@@ -2214,6 +2214,57 @@ app.delete('/api/platform-admin/organizations/:orgId', authenticatePlatformAdmin
   }
 });
 
+// Assign Subscription Plan to Organization
+app.post('/api/platform-admin/organizations/:orgId/assign-plan', authenticatePlatformAdmin, async (req, res) => {
+  try {
+    const { planId, billingCycle, trialDays } = req.body;
+
+    // Validate plan exists
+    const plan = await SubscriptionPlan.findById(planId);
+    if (!plan) {
+      return res.status(404).json({ error: 'Subscription plan not found' });
+    }
+
+    // Calculate dates
+    const now = new Date();
+    const trialEndDate = trialDays > 0 ? new Date(now.getTime() + (trialDays * 24 * 60 * 60 * 1000)) : now;
+    const periodStart = trialDays > 0 ? trialEndDate : now;
+    const periodEnd = new Date(periodStart);
+    if (billingCycle === 'annual') {
+      periodEnd.setFullYear(periodEnd.getFullYear() + 1);
+    } else {
+      periodEnd.setMonth(periodEnd.getMonth() + 1);
+    }
+
+    // Update organization
+    const organization = await Organization.findByIdAndUpdate(
+      req.params.orgId,
+      {
+        'subscription.planId': planId,
+        'subscription.status': trialDays > 0 ? 'trial' : 'active',
+        'subscription.trialEndsAt': trialDays > 0 ? trialEndDate : null,
+        'subscription.currentPeriodStart': periodStart,
+        'subscription.currentPeriodEnd': periodEnd,
+        'subscription.billingCycle': billingCycle || 'monthly',
+        'subscription.cancelAtPeriodEnd': false
+      },
+      { new: true }
+    ).populate('subscription.planId');
+
+    if (!organization) {
+      return res.status(404).json({ error: 'Organization not found' });
+    }
+
+    res.json({
+      message: 'Subscription plan assigned successfully',
+      organization
+    });
+  } catch (error) {
+    console.error('Assign plan error:', error);
+    res.status(500).json({ error: 'Failed to assign subscription plan' });
+  }
+});
+
 // Impersonate Organization (generate token for org admin)
 app.post('/api/platform-admin/organizations/:orgId/impersonate', authenticatePlatformAdmin, async (req, res) => {
   try {
@@ -2369,6 +2420,102 @@ app.put('/api/organization/settings', authenticateToken, isSuperAdmin, async (re
     res.json(organization);
   } catch (error) {
     res.status(500).json({ error: 'Failed to update settings' });
+  }
+});
+
+// Get available subscription plans for organization
+app.get('/api/organization/plans', authenticateToken, async (req, res) => {
+  try {
+    const plans = await SubscriptionPlan.find({ isActive: true }).sort({ sortOrder: 1 });
+    res.json({ plans });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch plans' });
+  }
+});
+
+// Get current subscription details
+app.get('/api/organization/subscription', authenticateToken, async (req, res) => {
+  try {
+    const organization = await Organization.findById(req.user.organizationId._id)
+      .populate('subscription.planId')
+      .lean();
+
+    res.json({
+      subscription: organization.subscription || null,
+      usage: organization.usage || null
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch subscription' });
+  }
+});
+
+// Select/Change subscription plan (organization admin)
+app.post('/api/organization/subscription/select-plan', authenticateToken, isSuperAdmin, async (req, res) => {
+  try {
+    const { planId, billingCycle } = req.body;
+
+    // Validate plan exists
+    const plan = await SubscriptionPlan.findById(planId);
+    if (!plan || !plan.isActive) {
+      return res.status(404).json({ error: 'Subscription plan not found or inactive' });
+    }
+
+    const organization = await Organization.findById(req.user.organizationId._id);
+
+    // Check if currently on trial
+    const isOnTrial = organization.subscription?.status === 'trial';
+    const now = new Date();
+
+    // Calculate new period dates
+    const periodStart = now;
+    const periodEnd = new Date(periodStart);
+    if (billingCycle === 'annual') {
+      periodEnd.setFullYear(periodEnd.getFullYear() + 1);
+    } else {
+      periodEnd.setMonth(periodEnd.getMonth() + 1);
+    }
+
+    // Update organization subscription
+    organization.subscription = organization.subscription || {};
+    organization.subscription.planId = planId;
+    organization.subscription.status = 'active'; // Convert from trial to active
+    organization.subscription.billingCycle = billingCycle || 'monthly';
+    organization.subscription.currentPeriodStart = periodStart;
+    organization.subscription.currentPeriodEnd = periodEnd;
+    organization.subscription.cancelAtPeriodEnd = false;
+
+    // Clear trial date if converting from trial
+    if (isOnTrial) {
+      organization.subscription.trialEndsAt = null;
+    }
+
+    await organization.save();
+    await organization.populate('subscription.planId');
+
+    // Log the change
+    await AuditLog.create({
+      organizationId: organization._id,
+      userId: req.user._id,
+      action: 'SUBSCRIPTION_PLAN_CHANGED',
+      entityType: 'organization',
+      entityId: organization._id,
+      details: {
+        planId,
+        planName: plan.displayName,
+        billingCycle,
+        wasOnTrial: isOnTrial
+      },
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent')
+    });
+
+    res.json({
+      message: 'Subscription plan updated successfully',
+      subscription: organization.subscription
+    });
+  } catch (error) {
+    console.error('Select plan error:', error);
+    res.status(500).json({ error: 'Failed to update subscription plan' });
   }
 });
 

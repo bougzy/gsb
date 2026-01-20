@@ -836,6 +836,49 @@
         </div>
     </div>
 
+    <!-- Assign Plan Modal -->
+    <div class="modal fade" id="assignPlanModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Assign Subscription Plan</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="assignPlanForm">
+                        <input type="hidden" id="assignOrgId">
+                        <div class="mb-3">
+                            <label class="form-label">Organization</label>
+                            <input type="text" class="form-control" id="assignOrgName" readonly>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Subscription Plan *</label>
+                            <select class="form-select" id="assignPlanId" required>
+                                <option value="">Select a plan...</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Billing Cycle *</label>
+                            <select class="form-select" id="assignBillingCycle" required>
+                                <option value="monthly">Monthly</option>
+                                <option value="annual">Annual (2 months free)</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Trial Days</label>
+                            <input type="number" class="form-control" id="assignTrialDays" value="0" min="0" max="90">
+                            <small class="text-muted">Set to 0 to activate immediately</small>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="submitAssignPlanBtn">Assign Plan</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         const API_BASE_URL = window.location.hostname === 'localhost'
@@ -943,13 +986,16 @@
                     <td>${new Date(org.createdAt).toLocaleDateString()}</td>
                     <td>
                         <div class="btn-group btn-group-sm">
-                            <button class="btn btn-sm btn-primary" onclick="viewOrganization('${org._id}')">
+                            <button class="btn btn-sm btn-primary" onclick="viewOrganization('${org._id}')" title="View Details">
                                 <i class="fas fa-eye"></i>
                             </button>
-                            <button class="btn btn-sm btn-success" onclick="impersonateOrg('${org._id}')">
+                            <button class="btn btn-sm btn-info" onclick="assignPlanToOrg('${org._id}', '${org.name}')" title="Assign Plan">
+                                <i class="fas fa-tags"></i>
+                            </button>
+                            <button class="btn btn-sm btn-success" onclick="impersonateOrg('${org._id}')" title="Impersonate">
                                 <i class="fas fa-user-secret"></i>
                             </button>
-                            <button class="btn btn-sm btn-warning" onclick="editOrganization('${org._id}')">
+                            <button class="btn btn-sm btn-warning" onclick="editOrganization('${org._id}')" title="Edit">
                                 <i class="fas fa-edit"></i>
                             </button>
                         </div>
@@ -1215,6 +1261,71 @@
             }
         }
 
+        // Assign plan to organization
+        async function assignPlanToOrg(orgId, orgName) {
+            try {
+                // Load available plans
+                const response = await fetch(`${API_BASE_URL}/platform-admin/plans`, {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+                const data = await response.json();
+
+                // Populate plan dropdown
+                const planSelect = document.getElementById('assignPlanId');
+                planSelect.innerHTML = '<option value="">Select a plan...</option>' +
+                    data.plans.map(plan => `
+                        <option value="${plan._id}">
+                            ${plan.displayName} - $${(plan.pricing.monthly / 100).toFixed(0)}/month
+                        </option>
+                    `).join('');
+
+                // Set organization info
+                document.getElementById('assignOrgId').value = orgId;
+                document.getElementById('assignOrgName').value = orgName;
+
+                // Show modal
+                new bootstrap.Modal(document.getElementById('assignPlanModal')).show();
+            } catch (error) {
+                alert('Failed to load subscription plans');
+            }
+        }
+
+        // Submit plan assignment
+        async function submitAssignPlan() {
+            const orgId = document.getElementById('assignOrgId').value;
+            const planId = document.getElementById('assignPlanId').value;
+            const billingCycle = document.getElementById('assignBillingCycle').value;
+            const trialDays = parseInt(document.getElementById('assignTrialDays').value);
+
+            if (!planId) {
+                alert('Please select a subscription plan');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/platform-admin/organizations/${orgId}/assign-plan`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${authToken}`
+                    },
+                    body: JSON.stringify({ planId, billingCycle, trialDays })
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.error || 'Failed to assign plan');
+                }
+
+                alert('Subscription plan assigned successfully!');
+                bootstrap.Modal.getInstance(document.getElementById('assignPlanModal')).hide();
+                document.getElementById('assignPlanForm').reset();
+                loadOrganizations();
+            } catch (error) {
+                alert(error.message);
+            }
+        }
+
         // Edit organization (placeholder)
         function editOrganization(orgId) {
             alert('Edit organization feature coming soon!');
@@ -1300,6 +1411,7 @@
             });
 
             document.getElementById('submitOrgBtn')?.addEventListener('click', createOrganization);
+            document.getElementById('submitAssignPlanBtn')?.addEventListener('click', submitAssignPlan);
 
             // Search and filter
             document.getElementById('orgSearch')?.addEventListener('input', loadOrganizations);
