@@ -13,12 +13,9 @@ const bcrypt = require('bcryptjs');
 require('dotenv').config();
 
 // MongoDB Connection
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/gsams';
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://prezent:prezent@prezent.pw70dzq.mongodb.net/prezent';
 
-mongoose.connect(MONGODB_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true
-}).then(() => {
+mongoose.connect(MONGODB_URI).then(() => {
   console.log('✅ Connected to MongoDB');
   seedDatabase();
 }).catch((error) => {
