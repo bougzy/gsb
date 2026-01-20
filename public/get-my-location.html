@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Get My Exact Location - GSAMS</title>
+    <title>Get Location Coordinates - GSAMS</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
@@ -123,14 +123,68 @@
 <body>
     <div class="location-card">
         <div class="card-header">
-            <h1><i class="fas fa-map-marker-alt me-2"></i>Get My Exact Location</h1>
-            <p class="mb-0">Use this to find your GPS coordinates for meeting creation</p>
+            <h1><i class="fas fa-map-marker-alt me-2"></i>Get Location Coordinates</h1>
+            <p class="mb-0">Find GPS coordinates for ANY location worldwide</p>
         </div>
         <div class="card-body">
-            <div class="text-center">
-                <button class="get-location-btn" onclick="getMyLocation()">
-                    <i class="fas fa-location-arrow me-2"></i>Get My Current Location
-                </button>
+            <!-- Tab Navigation -->
+            <ul class="nav nav-pills nav-fill mb-4" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="current-tab" data-bs-toggle="pill" data-bs-target="#current-location" type="button">
+                        <i class="fas fa-location-arrow me-2"></i>My Current Location
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="search-tab" data-bs-toggle="pill" data-bs-target="#search-location" type="button">
+                        <i class="fas fa-search me-2"></i>Search Any Location
+                    </button>
+                </li>
+            </ul>
+
+            <!-- Tab Content -->
+            <div class="tab-content">
+                <!-- Current Location Tab -->
+                <div class="tab-pane fade show active" id="current-location">
+                    <div class="text-center">
+                        <button class="get-location-btn" onclick="getMyLocation()">
+                            <i class="fas fa-location-arrow me-2"></i>Get My Current Location
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Search Location Tab -->
+                <div class="tab-pane fade" id="search-location">
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">🔍 Search for any address or place:</label>
+                        <div class="input-group">
+                            <input type="text" class="form-control form-control-lg" id="addressSearch"
+                                   placeholder="e.g., Eko Hotel Lagos, National Mosque Abuja, Victoria Island..."
+                                   onkeypress="if(event.key==='Enter') searchLocation()">
+                            <button class="btn btn-primary" onclick="searchLocation()">
+                                <i class="fas fa-search me-2"></i>Search
+                            </button>
+                        </div>
+                        <small class="text-muted">
+                            <i class="fas fa-info-circle me-1"></i>
+                            Enter any address, landmark, or place name with city/country
+                        </small>
+                    </div>
+
+                    <!-- Popular Locations Shortcuts -->
+                    <div class="mt-4">
+                        <p class="fw-bold mb-2">
+                            <i class="fas fa-star me-2"></i>Quick Search - Popular Nigerian Locations:
+                        </p>
+                        <div class="d-flex flex-wrap gap-2">
+                            <button class="btn btn-sm btn-outline-primary" onclick="quickSearch('Eko Hotel Victoria Island Lagos')">Eko Hotel, Lagos</button>
+                            <button class="btn btn-sm btn-outline-primary" onclick="quickSearch('National Mosque Abuja Nigeria')">National Mosque, Abuja</button>
+                            <button class="btn btn-sm btn-outline-primary" onclick="quickSearch('University of Lagos Akoka')">UNILAG, Lagos</button>
+                            <button class="btn btn-sm btn-outline-primary" onclick="quickSearch('Murtala Muhammed Airport Lagos')">MMA, Lagos</button>
+                            <button class="btn btn-sm btn-outline-primary" onclick="quickSearch('Ikeja City Mall Lagos')">Ikeja City Mall</button>
+                            <button class="btn btn-sm btn-outline-primary" onclick="quickSearch('Port Harcourt Nigeria')">Port Harcourt</button>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <div id="loadingSpinner" class="text-center my-4">
@@ -211,13 +265,13 @@
             </div>
 
             <div class="info-box mt-4">
-                <h6><i class="fas fa-lightbulb me-2"></i>Tips for Best Accuracy:</h6>
+                <h6><i class="fas fa-lightbulb me-2"></i>How to Use:</h6>
                 <ul class="mb-0">
-                    <li>📱 Use this page <strong>while at the meeting venue</strong></li>
-                    <li>🌤️ Go <strong>outside</strong> if possible (GPS works better outdoors)</li>
-                    <li>⏱️ Wait a few seconds for GPS to stabilize</li>
-                    <li>🎯 Accuracy under 50 meters is excellent for most meetings</li>
-                    <li>🔄 If accuracy is poor (>100m), try refreshing and getting location again</li>
+                    <li>📍 <strong>"My Current Location"</strong> - Use when you're AT the venue (most accurate)</li>
+                    <li>🔍 <strong>"Search Any Location"</strong> - Use to find coordinates for ANY place worldwide</li>
+                    <li>📋 Click <strong>Copy</strong> buttons to copy coordinates</li>
+                    <li>📝 Paste coordinates when creating meetings in the dashboard</li>
+                    <li>✅ Set radius appropriately (100-200m for most venues)</li>
                 </ul>
             </div>
         </div>
@@ -314,6 +368,67 @@
             document.getElementById('errorSection').style.display = 'block';
         }
 
+        // Search for any location by address
+        async function searchLocation() {
+            const address = document.getElementById('addressSearch').value.trim();
+
+            if (!address) {
+                alert('Please enter an address or place name to search');
+                return;
+            }
+
+            document.getElementById('loadingSpinner').style.display = 'block';
+            document.getElementById('resultSection').style.display = 'none';
+            document.getElementById('errorSection').style.display = 'none';
+
+            try {
+                // Use Nominatim (OpenStreetMap) geocoding API
+                const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&limit=1&addressdetails=1`);
+                const data = await response.json();
+
+                if (data && data.length > 0) {
+                    const result = data[0];
+                    currentLatitude = parseFloat(result.lat);
+                    currentLongitude = parseFloat(result.lon);
+                    const displayName = result.display_name;
+
+                    // Display coordinates
+                    document.getElementById('latitudeValue').textContent = currentLatitude.toFixed(6);
+                    document.getElementById('longitudeValue').textContent = currentLongitude.toFixed(6);
+
+                    // Show accuracy info (searched locations don't have accuracy, so we show a different message)
+                    const accuracyBadge = document.getElementById('accuracyBadge');
+                    const accuracyText = document.getElementById('accuracyText');
+
+                    accuracyBadge.className = 'accuracy-badge accuracy-excellent';
+                    accuracyBadge.innerHTML = `<i class="fas fa-map-marker-alt me-2"></i>Geocoded Location`;
+                    accuracyText.textContent = `Found: ${displayName}`;
+
+                    // Set Google Maps link
+                    const mapsLink = document.getElementById('googleMapsLink');
+                    mapsLink.href = `https://www.google.com/maps?q=${currentLatitude},${currentLongitude}`;
+
+                    // Hide loading, show results
+                    document.getElementById('loadingSpinner').style.display = 'none';
+                    document.getElementById('resultSection').style.display = 'block';
+
+                    // Clear search box
+                    document.getElementById('addressSearch').value = '';
+                } else {
+                    showError(`Address not found: "${address}". Try being more specific (add city/country) or use a landmark name.`);
+                }
+            } catch (error) {
+                console.error('Geocoding error:', error);
+                showError('Error searching for address. Please check your internet connection and try again.');
+            }
+        }
+
+        // Quick search shortcut
+        function quickSearch(query) {
+            document.getElementById('addressSearch').value = query;
+            searchLocation();
+        }
+
         function copyToClipboard(elementId) {
             const text = document.getElementById(elementId).textContent;
 
@@ -362,5 +477,8 @@
         // Uncomment the line below if you want location to be fetched automatically
         // window.onload = getMyLocation;
     </script>
+
+    <!-- Bootstrap JS for tabs -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
