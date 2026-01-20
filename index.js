@@ -169,12 +169,119 @@ mongoose.connection.on('error', (err) => {
 // Database Models
 const Schema = mongoose.Schema;
 
+// Platform Admin Schema (Super Super Super Admin)
+const PlatformAdminSchema = new Schema({
+  email: { type: String, required: true, unique: true },
+  password: { type: String, required: true },
+  fullName: { type: String, required: true },
+  phone: { type: String },
+  role: { type: String, default: 'platform_admin' },
+  isActive: { type: Boolean, default: true },
+  isSuperAdmin: { type: Boolean, default: false }, // The ultimate admin
+  lastLogin: { type: Date },
+  createdAt: { type: Date, default: Date.now },
+  permissions: {
+    canManageOrganizations: { type: Boolean, default: true },
+    canManageSubscriptions: { type: Boolean, default: true },
+    canViewGlobalAnalytics: { type: Boolean, default: true },
+    canImpersonateOrgs: { type: Boolean, default: true },
+    canManagePlatformAdmins: { type: Boolean, default: false }, // Only super admin
+    canAccessBilling: { type: Boolean, default: true },
+    canModifyPricing: { type: Boolean, default: false } // Only super admin
+  }
+});
+
+// Subscription Plan Schema
+const SubscriptionPlanSchema = new Schema({
+  name: { type: String, required: true }, // Starter, Professional, Enterprise
+  displayName: { type: String, required: true },
+  description: { type: String },
+  pricing: {
+    monthly: { type: Number, required: true }, // in cents (e.g., 4900 = $49)
+    annual: { type: Number }, // annual pricing (usually discounted)
+    currency: { type: String, default: 'USD' }
+  },
+  limits: {
+    maxAttendees: { type: Number, default: 100 }, // per month
+    maxAdmins: { type: Number, default: 1 },
+    maxMeetings: { type: Number, default: 10 }, // per month
+    maxStorageGB: { type: Number, default: 1 }
+  },
+  features: {
+    gpsVerification: { type: Boolean, default: true },
+    smsVerification: { type: Boolean, default: false },
+    ussdVerification: { type: Boolean, default: false },
+    kioskMode: { type: Boolean, default: false },
+    manualEntry: { type: Boolean, default: false },
+    customForms: { type: Boolean, default: false },
+    advancedAnalytics: { type: Boolean, default: false },
+    exportPDF: { type: Boolean, default: true },
+    exportExcel: { type: Boolean, default: false },
+    apiAccess: { type: Boolean, default: false },
+    whiteLabel: { type: Boolean, default: false },
+    prioritySupport: { type: Boolean, default: false },
+    sla: { type: Boolean, default: false }
+  },
+  isActive: { type: Boolean, default: true },
+  sortOrder: { type: Number, default: 0 },
+  createdAt: { type: Date, default: Date.now }
+});
+
 // Organization Schema
 const OrganizationSchema = new Schema({
   name: { type: String, required: true },
   domain: { type: String, unique: true },
   createdAt: { type: Date, default: Date.now },
   isActive: { type: Boolean, default: true },
+
+  // Subscription Info
+  subscription: {
+    planId: { type: Schema.Types.ObjectId, ref: 'SubscriptionPlan' },
+    status: {
+      type: String,
+      enum: ['trial', 'active', 'past_due', 'cancelled', 'expired'],
+      default: 'trial'
+    },
+    trialEndsAt: { type: Date },
+    currentPeriodStart: { type: Date },
+    currentPeriodEnd: { type: Date },
+    cancelAtPeriodEnd: { type: Boolean, default: false },
+    billingCycle: { type: String, enum: ['monthly', 'annual'], default: 'monthly' }
+  },
+
+  // Usage Tracking
+  usage: {
+    currentMonthAttendees: { type: Number, default: 0 },
+    currentMonthMeetings: { type: Number, default: 0 },
+    totalAttendees: { type: Number, default: 0 },
+    totalMeetings: { type: Number, default: 0 },
+    storageUsedMB: { type: Number, default: 0 },
+    lastResetDate: { type: Date, default: Date.now }
+  },
+
+  // Billing Info
+  billing: {
+    email: { type: String },
+    phone: { type: String },
+    address: {
+      line1: { type: String },
+      line2: { type: String },
+      city: { type: String },
+      state: { type: String },
+      country: { type: String },
+      postalCode: { type: String }
+    },
+    paymentMethod: {
+      type: { type: String, enum: ['card', 'bank_transfer', 'mobile_money'], default: 'card' },
+      lastFourDigits: { type: String },
+      expiryMonth: { type: Number },
+      expiryYear: { type: Number },
+      brand: { type: String } // Visa, MasterCard, etc.
+    },
+    stripeCustomerId: { type: String },
+    paystackCustomerId: { type: String }
+  },
+
   settings: {
     defaultLocationRadius: { type: Number, default: 100 }, // meters
     defaultTimeWindow: { type: Number, default: 30 }, // minutes
@@ -486,6 +593,8 @@ const AuditLogSchema = new Schema({
 });
 
 // Create Models
+const PlatformAdmin = mongoose.model('PlatformAdmin', PlatformAdminSchema);
+const SubscriptionPlan = mongoose.model('SubscriptionPlan', SubscriptionPlanSchema);
 const Organization = mongoose.model('Organization', OrganizationSchema);
 const AdminUser = mongoose.model('AdminUser', AdminUserSchema);
 const Meeting = mongoose.model('Meeting', MeetingSchema);
@@ -1333,6 +1442,41 @@ const authenticateToken = async (req, res, next) => {
   }
 };
 
+// Platform Admin Authentication Middleware
+const authenticatePlatformAdmin = async (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (!token) return res.status(401).json({ error: 'Access token required' });
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+
+    // Check if this is a platform admin token
+    if (decoded.type !== 'platform_admin') {
+      return res.status(403).json({ error: 'Platform admin access required' });
+    }
+
+    req.platformAdmin = await PlatformAdmin.findById(decoded.userId);
+
+    if (!req.platformAdmin || !req.platformAdmin.isActive) {
+      return res.status(401).json({ error: 'Platform admin account is inactive or not found' });
+    }
+
+    next();
+  } catch (error) {
+    return res.status(403).json({ error: 'Invalid or expired token' });
+  }
+};
+
+// Check if platform admin is super admin
+const isPlatformSuperAdmin = (req, res, next) => {
+  if (!req.platformAdmin || !req.platformAdmin.isSuperAdmin) {
+    return res.status(403).json({ error: 'Platform super admin access required' });
+  }
+  next();
+};
+
 // Check if user is super admin
 const isSuperAdmin = (req, res, next) => {
   if (req.user.role !== 'super_admin') {
@@ -1558,6 +1702,14 @@ app.get('/dashboard.html', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
 });
 
+app.get('/platform-admin.html', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'platform-admin.html'));
+});
+
+app.get('/platform-admin-login.html', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'platform-admin-login.html'));
+});
+
 // 1. Authentication Routes
 app.post('/api/auth/register', async (req, res) => {
   try {
@@ -1717,6 +1869,470 @@ app.post('/api/auth/login', async (req, res) => {
   } catch (error) {
     console.error('Login error:', error);
     res.status(500).json({ error: 'Login failed' });
+  }
+});
+
+// ================= PLATFORM ADMIN ROUTES =================
+
+// Platform Admin Login
+app.post('/api/platform-admin/auth/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    const platformAdmin = await PlatformAdmin.findOne({ email });
+    if (!platformAdmin) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    const isValidPassword = await bcrypt.compare(password, platformAdmin.password);
+    if (!isValidPassword) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    if (!platformAdmin.isActive) {
+      return res.status(403).json({ error: 'Account is inactive' });
+    }
+
+    // Update last login
+    platformAdmin.lastLogin = new Date();
+    await platformAdmin.save();
+
+    // Generate token
+    const token = jwt.sign(
+      { userId: platformAdmin._id, type: 'platform_admin' },
+      process.env.JWT_SECRET || 'your-secret-key',
+      { expiresIn: '24h' }
+    );
+
+    res.json({
+      token,
+      platformAdmin: {
+        id: platformAdmin._id,
+        email: platformAdmin.email,
+        fullName: platformAdmin.fullName,
+        role: platformAdmin.role,
+        isSuperAdmin: platformAdmin.isSuperAdmin,
+        permissions: platformAdmin.permissions
+      }
+    });
+  } catch (error) {
+    console.error('Platform admin login error:', error);
+    res.status(500).json({ error: 'Login failed' });
+  }
+});
+
+// Get Platform Admin Info
+app.get('/api/platform-admin/me', authenticatePlatformAdmin, async (req, res) => {
+  res.json({
+    id: req.platformAdmin._id,
+    email: req.platformAdmin.email,
+    fullName: req.platformAdmin.fullName,
+    role: req.platformAdmin.role,
+    isSuperAdmin: req.platformAdmin.isSuperAdmin,
+    permissions: req.platformAdmin.permissions,
+    lastLogin: req.platformAdmin.lastLogin
+  });
+});
+
+// Get Global Analytics
+app.get('/api/platform-admin/analytics', authenticatePlatformAdmin, async (req, res) => {
+  try {
+    const totalOrganizations = await Organization.countDocuments();
+    const activeOrganizations = await Organization.countDocuments({
+      isActive: true,
+      'subscription.status': { $in: ['trial', 'active'] }
+    });
+    const totalMeetings = await Meeting.countDocuments();
+    const totalAttendance = await AttendanceRecord.countDocuments();
+
+    // Revenue calculations (assuming monthly billing)
+    const organizations = await Organization.find({
+      'subscription.status': 'active'
+    }).populate('subscription.planId');
+
+    let monthlyRecurringRevenue = 0;
+    for (const org of organizations) {
+      if (org.subscription.planId) {
+        monthlyRecurringRevenue += org.subscription.planId.pricing.monthly;
+      }
+    }
+
+    // Trial organizations
+    const trialOrganizations = await Organization.countDocuments({
+      'subscription.status': 'trial'
+    });
+
+    // Expiring trials (next 7 days)
+    const sevenDaysFromNow = new Date();
+    sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7);
+    const expiringTrials = await Organization.countDocuments({
+      'subscription.status': 'trial',
+      'subscription.trialEndsAt': { $lte: sevenDaysFromNow, $gte: new Date() }
+    });
+
+    // Subscription breakdown
+    const subscriptionBreakdown = await Organization.aggregate([
+      { $match: { 'subscription.status': { $in: ['trial', 'active'] } } },
+      { $group: { _id: '$subscription.status', count: { $sum: 1 } } }
+    ]);
+
+    // Recent signups (last 30 days)
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const recentSignups = await Organization.countDocuments({
+      createdAt: { $gte: thirtyDaysAgo }
+    });
+
+    res.json({
+      overview: {
+        totalOrganizations,
+        activeOrganizations,
+        trialOrganizations,
+        totalMeetings,
+        totalAttendance,
+        monthlyRecurringRevenue: monthlyRecurringRevenue / 100, // Convert cents to dollars
+        annualRecurringRevenue: (monthlyRecurringRevenue * 12) / 100
+      },
+      trials: {
+        total: trialOrganizations,
+        expiringIn7Days: expiringTrials
+      },
+      growth: {
+        recentSignups
+      },
+      subscriptionBreakdown
+    });
+  } catch (error) {
+    console.error('Analytics error:', error);
+    res.status(500).json({ error: 'Failed to fetch analytics' });
+  }
+});
+
+// Get All Organizations (with pagination, filters)
+app.get('/api/platform-admin/organizations', authenticatePlatformAdmin, async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 50;
+    const skip = (page - 1) * limit;
+
+    // Filters
+    const filter = {};
+    if (req.query.status) filter['subscription.status'] = req.query.status;
+    if (req.query.isActive !== undefined) filter.isActive = req.query.isActive === 'true';
+    if (req.query.search) {
+      filter.$or = [
+        { name: { $regex: req.query.search, $options: 'i' } },
+        { domain: { $regex: req.query.search, $options: 'i' } },
+        { 'billing.email': { $regex: req.query.search, $options: 'i' } }
+      ];
+    }
+
+    const total = await Organization.countDocuments(filter);
+    const organizations = await Organization.find(filter)
+      .populate('subscription.planId')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean();
+
+    // Add admin count and meeting count for each org
+    for (const org of organizations) {
+      org.adminCount = await AdminUser.countDocuments({ organizationId: org._id });
+      org.meetingCount = await Meeting.countDocuments({ organizationId: org._id });
+      org.attendanceCount = await AttendanceRecord.countDocuments({ organizationId: org._id });
+    }
+
+    res.json({
+      organizations,
+      pagination: {
+        page,
+        limit,
+        total,
+        pages: Math.ceil(total / limit)
+      }
+    });
+  } catch (error) {
+    console.error('Fetch organizations error:', error);
+    res.status(500).json({ error: 'Failed to fetch organizations' });
+  }
+});
+
+// Get Single Organization Details
+app.get('/api/platform-admin/organizations/:orgId', authenticatePlatformAdmin, async (req, res) => {
+  try {
+    const organization = await Organization.findById(req.params.orgId)
+      .populate('subscription.planId')
+      .lean();
+
+    if (!organization) {
+      return res.status(404).json({ error: 'Organization not found' });
+    }
+
+    // Get additional details
+    const admins = await AdminUser.find({ organizationId: organization._id })
+      .select('-password')
+      .lean();
+    const meetings = await Meeting.find({ organizationId: organization._id })
+      .sort({ createdAt: -1 })
+      .limit(10)
+      .lean();
+    const attendanceCount = await AttendanceRecord.countDocuments({ organizationId: organization._id });
+
+    res.json({
+      organization,
+      admins,
+      recentMeetings: meetings,
+      stats: {
+        totalAdmins: admins.length,
+        totalMeetings: await Meeting.countDocuments({ organizationId: organization._id }),
+        totalAttendance: attendanceCount
+      }
+    });
+  } catch (error) {
+    console.error('Fetch organization error:', error);
+    res.status(500).json({ error: 'Failed to fetch organization' });
+  }
+});
+
+// Create New Organization
+app.post('/api/platform-admin/organizations', authenticatePlatformAdmin, async (req, res) => {
+  try {
+    const { name, domain, planId, trialDays = 14, adminEmail, adminPassword, adminFullName } = req.body;
+
+    // Check if domain already exists
+    if (domain) {
+      const existingOrg = await Organization.findOne({ domain });
+      if (existingOrg) {
+        return res.status(400).json({ error: 'Domain already in use' });
+      }
+    }
+
+    // Create organization with trial
+    const trialEndsAt = new Date();
+    trialEndsAt.setDate(trialEndsAt.getDate() + trialDays);
+
+    const organization = await Organization.create({
+      name,
+      domain: domain || `${name.toLowerCase().replace(/[^a-z0-9]/g, '')}-${Date.now()}`,
+      isActive: true,
+      subscription: {
+        planId: planId || null,
+        status: 'trial',
+        trialEndsAt,
+        currentPeriodStart: new Date(),
+        currentPeriodEnd: trialEndsAt,
+        billingCycle: 'monthly'
+      }
+    });
+
+    // Create first admin user
+    const hashedPassword = await bcrypt.hash(adminPassword, 10);
+    const admin = await AdminUser.create({
+      organizationId: organization._id,
+      email: adminEmail,
+      password: hashedPassword,
+      fullName: adminFullName,
+      role: 'super_admin',
+      isActive: true,
+      permissions: {
+        canCreateMeetings: true,
+        canEditMeetings: true,
+        canDeleteMeetings: true,
+        canViewReports: true,
+        canManageAdmins: true,
+        canApproveAttendance: true
+      }
+    });
+
+    res.status(201).json({
+      organization,
+      admin: {
+        id: admin._id,
+        email: admin.email,
+        fullName: admin.fullName
+      }
+    });
+  } catch (error) {
+    console.error('Create organization error:', error);
+    res.status(500).json({ error: 'Failed to create organization' });
+  }
+});
+
+// Update Organization
+app.put('/api/platform-admin/organizations/:orgId', authenticatePlatformAdmin, async (req, res) => {
+  try {
+    const { name, domain, isActive, subscription, billing, settings } = req.body;
+
+    const updateData = {};
+    if (name) updateData.name = name;
+    if (domain) updateData.domain = domain;
+    if (isActive !== undefined) updateData.isActive = isActive;
+    if (subscription) updateData.subscription = { ...subscription };
+    if (billing) updateData.billing = { ...billing };
+    if (settings) updateData.settings = { ...settings };
+
+    const organization = await Organization.findByIdAndUpdate(
+      req.params.orgId,
+      updateData,
+      { new: true, runValidators: true }
+    ).populate('subscription.planId');
+
+    if (!organization) {
+      return res.status(404).json({ error: 'Organization not found' });
+    }
+
+    res.json(organization);
+  } catch (error) {
+    console.error('Update organization error:', error);
+    res.status(500).json({ error: 'Failed to update organization' });
+  }
+});
+
+// Delete Organization (soft delete - set inactive)
+app.delete('/api/platform-admin/organizations/:orgId', authenticatePlatformAdmin, async (req, res) => {
+  try {
+    const organization = await Organization.findByIdAndUpdate(
+      req.params.orgId,
+      { isActive: false, 'subscription.status': 'cancelled' },
+      { new: true }
+    );
+
+    if (!organization) {
+      return res.status(404).json({ error: 'Organization not found' });
+    }
+
+    // Also deactivate all admin users
+    await AdminUser.updateMany(
+      { organizationId: req.params.orgId },
+      { isActive: false }
+    );
+
+    res.json({ message: 'Organization deactivated successfully', organization });
+  } catch (error) {
+    console.error('Delete organization error:', error);
+    res.status(500).json({ error: 'Failed to delete organization' });
+  }
+});
+
+// Impersonate Organization (generate token for org admin)
+app.post('/api/platform-admin/organizations/:orgId/impersonate', authenticatePlatformAdmin, async (req, res) => {
+  try {
+    // Find the super admin of this organization
+    const admin = await AdminUser.findOne({
+      organizationId: req.params.orgId,
+      role: 'super_admin',
+      isActive: true
+    }).populate('organizationId');
+
+    if (!admin) {
+      return res.status(404).json({ error: 'No active super admin found for this organization' });
+    }
+
+    // Generate impersonation token
+    const token = jwt.sign(
+      { userId: admin._id, impersonatedBy: req.platformAdmin._id },
+      process.env.JWT_SECRET || 'your-secret-key',
+      { expiresIn: '2h' } // Shorter expiration for security
+    );
+
+    res.json({
+      token,
+      admin: {
+        id: admin._id,
+        email: admin.email,
+        fullName: admin.fullName,
+        organizationName: admin.organizationId.name
+      },
+      impersonationWarning: 'This is an impersonation session. It will expire in 2 hours.'
+    });
+  } catch (error) {
+    console.error('Impersonate error:', error);
+    res.status(500).json({ error: 'Failed to impersonate organization' });
+  }
+});
+
+// Get All Subscription Plans
+app.get('/api/platform-admin/plans', authenticatePlatformAdmin, async (req, res) => {
+  try {
+    const plans = await SubscriptionPlan.find().sort({ sortOrder: 1 });
+    res.json(plans);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch plans' });
+  }
+});
+
+// Create Subscription Plan
+app.post('/api/platform-admin/plans', authenticatePlatformAdmin, isPlatformSuperAdmin, async (req, res) => {
+  try {
+    const plan = await SubscriptionPlan.create(req.body);
+    res.status(201).json(plan);
+  } catch (error) {
+    console.error('Create plan error:', error);
+    res.status(500).json({ error: 'Failed to create plan' });
+  }
+});
+
+// Update Subscription Plan
+app.put('/api/platform-admin/plans/:planId', authenticatePlatformAdmin, isPlatformSuperAdmin, async (req, res) => {
+  try {
+    const plan = await SubscriptionPlan.findByIdAndUpdate(
+      req.params.planId,
+      req.body,
+      { new: true, runValidators: true }
+    );
+
+    if (!plan) {
+      return res.status(404).json({ error: 'Plan not found' });
+    }
+
+    res.json(plan);
+  } catch (error) {
+    console.error('Update plan error:', error);
+    res.status(500).json({ error: 'Failed to update plan' });
+  }
+});
+
+// Get Platform Admins
+app.get('/api/platform-admin/admins', authenticatePlatformAdmin, isPlatformSuperAdmin, async (req, res) => {
+  try {
+    const admins = await PlatformAdmin.find().select('-password').sort({ createdAt: -1 });
+    res.json(admins);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch platform admins' });
+  }
+});
+
+// Create Platform Admin
+app.post('/api/platform-admin/admins', authenticatePlatformAdmin, isPlatformSuperAdmin, async (req, res) => {
+  try {
+    const { email, password, fullName, phone, isSuperAdmin, permissions } = req.body;
+
+    // Check if email already exists
+    const existingAdmin = await PlatformAdmin.findOne({ email });
+    if (existingAdmin) {
+      return res.status(400).json({ error: 'Email already in use' });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    const platformAdmin = await PlatformAdmin.create({
+      email,
+      password: hashedPassword,
+      fullName,
+      phone,
+      isSuperAdmin: isSuperAdmin || false,
+      permissions: permissions || {}
+    });
+
+    res.status(201).json({
+      id: platformAdmin._id,
+      email: platformAdmin.email,
+      fullName: platformAdmin.fullName,
+      isSuperAdmin: platformAdmin.isSuperAdmin
+    });
+  } catch (error) {
+    console.error('Create platform admin error:', error);
+    res.status(500).json({ error: 'Failed to create platform admin' });
   }
 });
 

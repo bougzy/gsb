@@ -1,0 +1,936 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Platform Admin - GSAMS</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root {
+            --primary-color: #6366f1;
+            --secondary-color: #8b5cf6;
+            --success-color: #10b981;
+            --danger-color: #ef4444;
+            --warning-color: #f59e0b;
+            --info-color: #3b82f6;
+            --dark-color: #1f2937;
+            --light-color: #f3f4f6;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            height: 100vh;
+            width: 280px;
+            background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
+            padding: 2rem 0;
+            transition: all 0.3s ease;
+            z-index: 1000;
+            box-shadow: 4px 0 15px rgba(0, 0, 0, 0.3);
+            overflow-y: auto;
+        }
+
+        .sidebar.collapsed {
+            width: 80px;
+        }
+
+        .sidebar-header {
+            padding: 0 1.5rem 2rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .sidebar-logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            color: white;
+            font-size: 1.5rem;
+            font-weight: 700;
+        }
+
+        .sidebar-logo i {
+            color: var(--primary-color);
+            font-size: 2rem;
+        }
+
+        .sidebar-menu {
+            padding: 1.5rem 0;
+        }
+
+        .menu-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 1.5rem;
+            color: rgba(255, 255, 255, 0.7);
+            text-decoration: none;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            border-left: 3px solid transparent;
+        }
+
+        .menu-item:hover {
+            background: rgba(255, 255, 255, 0.05);
+            color: white;
+            border-left-color: var(--primary-color);
+        }
+
+        .menu-item.active {
+            background: rgba(99, 102, 241, 0.1);
+            color: white;
+            border-left-color: var(--primary-color);
+        }
+
+        .menu-item i {
+            font-size: 1.2rem;
+            width: 24px;
+            text-align: center;
+        }
+
+        /* Main Content */
+        .main-content {
+            margin-left: 280px;
+            min-height: 100vh;
+            transition: margin-left 0.3s ease;
+        }
+
+        .main-content.expanded {
+            margin-left: 80px;
+        }
+
+        .top-bar {
+            background: white;
+            padding: 1.5rem 2rem;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+
+        .page-title {
+            font-size: 1.75rem;
+            font-weight: 700;
+            color: var(--dark-color);
+        }
+
+        .user-menu {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .user-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 600;
+        }
+
+        /* Dashboard Content */
+        .dashboard-content {
+            padding: 2rem;
+        }
+
+        /* Stats Cards */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .stat-card {
+            background: white;
+            border-radius: 12px;
+            padding: 1.5rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 12px 24px rgba(0, 0, 0, 0.15);
+        }
+
+        .stat-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 1rem;
+        }
+
+        .stat-icon {
+            width: 50px;
+            height: 50px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            color: white;
+        }
+
+        .stat-icon.primary { background: linear-gradient(135deg, var(--primary-color), var(--secondary-color)); }
+        .stat-icon.success { background: linear-gradient(135deg, #10b981, #059669); }
+        .stat-icon.warning { background: linear-gradient(135deg, #f59e0b, #d97706); }
+        .stat-icon.danger { background: linear-gradient(135deg, #ef4444, #dc2626); }
+
+        .stat-value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--dark-color);
+            margin-bottom: 0.25rem;
+        }
+
+        .stat-label {
+            color: #6b7280;
+            font-size: 0.875rem;
+        }
+
+        /* Data Table */
+        .data-table-container {
+            background: white;
+            border-radius: 12px;
+            padding: 1.5rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
+            margin-bottom: 2rem;
+        }
+
+        .table-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+
+        .table-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: var(--dark-color);
+        }
+
+        .table-actions {
+            display: flex;
+            gap: 0.75rem;
+            flex-wrap: wrap;
+        }
+
+        .table-responsive {
+            overflow-x: auto;
+        }
+
+        .table {
+            width: 100%;
+            margin-bottom: 0;
+        }
+
+        .table thead th {
+            background: var(--light-color);
+            color: var(--dark-color);
+            font-weight: 600;
+            border: none;
+            padding: 1rem;
+            white-space: nowrap;
+        }
+
+        .table tbody td {
+            padding: 1rem;
+            vertical-align: middle;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        .table tbody tr:hover {
+            background: var(--light-color);
+        }
+
+        /* Badges */
+        .badge {
+            padding: 0.375rem 0.75rem;
+            border-radius: 6px;
+            font-weight: 500;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .badge-trial { background: #dbeafe; color: #1e40af; }
+        .badge-active { background: #d1fae5; color: #065f46; }
+        .badge-past-due { background: #fee2e2; color: #991b1b; }
+        .badge-cancelled { background: #e5e7eb; color: #374151; }
+        .badge-expired { background: #fef3c7; color: #92400e; }
+
+        /* Buttons */
+        .btn {
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            border: none;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
+        }
+
+        .btn-success { background: var(--success-color); color: white; }
+        .btn-danger { background: var(--danger-color); color: white; }
+        .btn-warning { background: var(--warning-color); color: white; }
+        .btn-secondary { background: #6b7280; color: white; }
+        .btn-sm { padding: 0.375rem 0.75rem; font-size: 0.875rem; }
+
+        /* Search & Filter */
+        .search-filter-bar {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+            flex-wrap: wrap;
+        }
+
+        .search-box {
+            flex: 1;
+            min-width: 250px;
+            position: relative;
+        }
+
+        .search-box input {
+            width: 100%;
+            padding: 0.75rem 1rem 0.75rem 2.5rem;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            font-size: 0.875rem;
+        }
+
+        .search-box i {
+            position: absolute;
+            left: 1rem;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #9ca3af;
+        }
+
+        /* Modal Enhancements */
+        .modal-content {
+            border-radius: 12px;
+            border: none;
+        }
+
+        .modal-header {
+            background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+            color: white;
+            border-radius: 12px 12px 0 0;
+            border-bottom: none;
+        }
+
+        /* Loading Spinner */
+        .loading {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 3rem;
+        }
+
+        .spinner {
+            border: 4px solid rgba(99, 102, 241, 0.1);
+            border-left-color: var(--primary-color);
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Responsive Design */
+        @media (max-width: 992px) {
+            .sidebar {
+                transform: translateX(-100%);
+            }
+
+            .sidebar.show {
+                transform: translateX(0);
+            }
+
+            .main-content {
+                margin-left: 0;
+            }
+
+            .stats-grid {
+                grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            }
+        }
+
+        @media (max-width: 768px) {
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .table-header {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .table-actions {
+                width: 100%;
+            }
+
+            .table-actions .btn {
+                flex: 1;
+            }
+
+            .dashboard-content {
+                padding: 1rem;
+            }
+        }
+
+        /* Utility Classes */
+        .text-muted { color: #6b7280; }
+        .text-success { color: var(--success-color); }
+        .text-danger { color: var(--danger-color); }
+        .mb-3 { margin-bottom: 1rem; }
+        .mt-2 { margin-top: 0.5rem; }
+        .d-none { display: none; }
+        .d-block { display: block; }
+    </style>
+</head>
+<body>
+    <!-- Sidebar -->
+    <div class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <div class="sidebar-logo">
+                <i class="fas fa-shield-halved"></i>
+                <span id="logoText">Platform Admin</span>
+            </div>
+        </div>
+
+        <div class="sidebar-menu">
+            <a class="menu-item active" data-section="dashboard">
+                <i class="fas fa-chart-line"></i>
+                <span>Dashboard</span>
+            </a>
+            <a class="menu-item" data-section="organizations">
+                <i class="fas fa-building"></i>
+                <span>Organizations</span>
+            </a>
+            <a class="menu-item" data-section="subscriptions">
+                <i class="fas fa-credit-card"></i>
+                <span>Subscriptions</span>
+            </a>
+            <a class="menu-item" data-section="plans">
+                <i class="fas fa-layer-group"></i>
+                <span>Plans</span>
+            </a>
+            <a class="menu-item" data-section="analytics">
+                <i class="fas fa-chart-pie"></i>
+                <span>Analytics</span>
+            </a>
+            <a class="menu-item" data-section="platform-admins">
+                <i class="fas fa-user-shield"></i>
+                <span>Platform Admins</span>
+            </a>
+            <a class="menu-item" id="logoutBtn">
+                <i class="fas fa-sign-out-alt"></i>
+                <span>Logout</span>
+            </a>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="main-content" id="mainContent">
+        <!-- Top Bar -->
+        <div class="top-bar">
+            <div>
+                <button class="btn btn-secondary btn-sm" id="toggleSidebar">
+                    <i class="fas fa-bars"></i>
+                </button>
+                <span class="page-title" id="pageTitle">Dashboard</span>
+            </div>
+
+            <div class="user-menu">
+                <span id="adminName">Platform Admin</span>
+                <div class="user-avatar" id="userAvatar">PA</div>
+            </div>
+        </div>
+
+        <!-- Dashboard Content -->
+        <div class="dashboard-content">
+            <!-- Dashboard Section -->
+            <div id="dashboardSection">
+                <!-- Stats Grid -->
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-card-header">
+                            <div class="stat-icon primary">
+                                <i class="fas fa-building"></i>
+                            </div>
+                        </div>
+                        <div class="stat-value" id="totalOrgs">0</div>
+                        <div class="stat-label">Total Organizations</div>
+                    </div>
+
+                    <div class="stat-card">
+                        <div class="stat-card-header">
+                            <div class="stat-icon success">
+                                <i class="fas fa-check-circle"></i>
+                            </div>
+                        </div>
+                        <div class="stat-value" id="activeOrgs">0</div>
+                        <div class="stat-label">Active Organizations</div>
+                    </div>
+
+                    <div class="stat-card">
+                        <div class="stat-card-header">
+                            <div class="stat-icon warning">
+                                <i class="fas fa-clock"></i>
+                            </div>
+                        </div>
+                        <div class="stat-value" id="trialOrgs">0</div>
+                        <div class="stat-label">Trial Organizations</div>
+                    </div>
+
+                    <div class="stat-card">
+                        <div class="stat-card-header">
+                            <div class="stat-icon primary">
+                                <i class="fas fa-dollar-sign"></i>
+                            </div>
+                        </div>
+                        <div class="stat-value" id="mrr">$0</div>
+                        <div class="stat-label">Monthly Recurring Revenue</div>
+                    </div>
+
+                    <div class="stat-card">
+                        <div class="stat-card-header">
+                            <div class="stat-icon success">
+                                <i class="fas fa-calendar-check"></i>
+                            </div>
+                        </div>
+                        <div class="stat-value" id="totalMeetings">0</div>
+                        <div class="stat-label">Total Meetings</div>
+                    </div>
+
+                    <div class="stat-card">
+                        <div class="stat-card-header">
+                            <div class="stat-icon primary">
+                                <i class="fas fa-users"></i>
+                            </div>
+                        </div>
+                        <div class="stat-value" id="totalAttendance">0</div>
+                        <div class="stat-label">Total Attendance</div>
+                    </div>
+
+                    <div class="stat-card">
+                        <div class="stat-card-header">
+                            <div class="stat-icon warning">
+                                <i class="fas fa-exclamation-triangle"></i>
+                            </div>
+                        </div>
+                        <div class="stat-value" id="expiringTrials">0</div>
+                        <div class="stat-label">Expiring Trials (7 days)</div>
+                    </div>
+
+                    <div class="stat-card">
+                        <div class="stat-card-header">
+                            <div class="stat-icon success">
+                                <i class="fas fa-user-plus"></i>
+                            </div>
+                        </div>
+                        <div class="stat-value" id="recentSignups">0</div>
+                        <div class="stat-label">Recent Signups (30 days)</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Organizations Section -->
+            <div id="organizationsSection" class="d-none">
+                <div class="data-table-container">
+                    <div class="table-header">
+                        <h2 class="table-title">All Organizations</h2>
+                        <div class="table-actions">
+                            <button class="btn btn-primary" id="createOrgBtn">
+                                <i class="fas fa-plus"></i>
+                                Create Organization
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="search-filter-bar">
+                        <div class="search-box">
+                            <i class="fas fa-search"></i>
+                            <input type="text" id="orgSearch" placeholder="Search organizations..." class="form-control">
+                        </div>
+                        <select id="statusFilter" class="form-select" style="max-width: 200px;">
+                            <option value="">All Statuses</option>
+                            <option value="trial">Trial</option>
+                            <option value="active">Active</option>
+                            <option value="past_due">Past Due</option>
+                            <option value="cancelled">Cancelled</option>
+                            <option value="expired">Expired</option>
+                        </select>
+                    </div>
+
+                    <div class="table-responsive">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Organization</th>
+                                    <th>Plan</th>
+                                    <th>Status</th>
+                                    <th>Admins</th>
+                                    <th>Meetings</th>
+                                    <th>Attendance</th>
+                                    <th>Created</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="organizationsTable">
+                                <tr>
+                                    <td colspan="8" class="text-center">
+                                        <div class="loading">
+                                            <div class="spinner"></div>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Other sections will be added here -->
+        </div>
+    </div>
+
+    <!-- Create Organization Modal -->
+    <div class="modal fade" id="createOrgModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Create New Organization</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="createOrgForm">
+                        <div class="mb-3">
+                            <label class="form-label">Organization Name *</label>
+                            <input type="text" class="form-control" id="orgName" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Domain (optional)</label>
+                            <input type="text" class="form-control" id="orgDomain" placeholder="mycompany">
+                            <small class="text-muted">Leave blank to auto-generate</small>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Trial Days</label>
+                            <input type="number" class="form-control" id="trialDays" value="14" min="0" max="90">
+                        </div>
+                        <hr>
+                        <h6>First Admin Account</h6>
+                        <div class="mb-3">
+                            <label class="form-label">Admin Full Name *</label>
+                            <input type="text" class="form-control" id="adminFullName" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Admin Email *</label>
+                            <input type="email" class="form-control" id="adminEmail" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Admin Password *</label>
+                            <input type="password" class="form-control" id="adminPassword" required>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="submitOrgBtn">Create Organization</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        const API_BASE_URL = window.location.hostname === 'localhost'
+            ? 'http://localhost:5000/api'
+            : 'https://gsams.vercel.app/api';
+
+        let authToken = localStorage.getItem('platformAdminToken');
+        let currentSection = 'dashboard';
+
+        // Check authentication
+        function checkAuth() {
+            if (!authToken) {
+                window.location.href = 'platform-admin-login.html';
+                return false;
+            }
+            return true;
+        }
+
+        // Load platform admin info
+        async function loadAdminInfo() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/platform-admin/me`, {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+
+                if (!response.ok) throw new Error('Unauthorized');
+
+                const admin = await response.json();
+                document.getElementById('adminName').textContent = admin.fullName;
+                document.getElementById('userAvatar').textContent = admin.fullName.split(' ').map(n => n[0]).join('');
+            } catch (error) {
+                console.error('Auth error:', error);
+                localStorage.removeItem('platformAdminToken');
+                window.location.href = 'platform-admin-login.html';
+            }
+        }
+
+        // Load dashboard analytics
+        async function loadDashboard() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/platform-admin/analytics`, {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+
+                const data = await response.json();
+
+                document.getElementById('totalOrgs').textContent = data.overview.totalOrganizations;
+                document.getElementById('activeOrgs').textContent = data.overview.activeOrganizations;
+                document.getElementById('trialOrgs').textContent = data.overview.trialOrganizations;
+                document.getElementById('mrr').textContent = `$${data.overview.monthlyRecurringRevenue.toFixed(0)}`;
+                document.getElementById('totalMeetings').textContent = data.overview.totalMeetings;
+                document.getElementById('totalAttendance').textContent = data.overview.totalAttendance;
+                document.getElementById('expiringTrials').textContent = data.trials.expiringIn7Days;
+                document.getElementById('recentSignups').textContent = data.growth.recentSignups;
+            } catch (error) {
+                console.error('Dashboard error:', error);
+            }
+        }
+
+        // Load organizations
+        async function loadOrganizations() {
+            const search = document.getElementById('orgSearch')?.value || '';
+            const status = document.getElementById('statusFilter')?.value || '';
+
+            try {
+                const params = new URLSearchParams();
+                if (search) params.append('search', search);
+                if (status) params.append('status', status);
+
+                const response = await fetch(`${API_BASE_URL}/platform-admin/organizations?${params}`, {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+
+                const data = await response.json();
+                displayOrganizations(data.organizations);
+            } catch (error) {
+                console.error('Load organizations error:', error);
+            }
+        }
+
+        function displayOrganizations(organizations) {
+            const tbody = document.getElementById('organizationsTable');
+
+            if (!organizations || organizations.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted">No organizations found</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = organizations.map(org => `
+                <tr>
+                    <td>
+                        <strong>${org.name}</strong><br>
+                        <small class="text-muted">${org.domain}</small>
+                    </td>
+                    <td>${org.subscription.planId?.displayName || 'None'}</td>
+                    <td><span class="badge badge-${org.subscription.status}">${org.subscription.status}</span></td>
+                    <td>${org.adminCount || 0}</td>
+                    <td>${org.meetingCount || 0}</td>
+                    <td>${org.attendanceCount || 0}</td>
+                    <td>${new Date(org.createdAt).toLocaleDateString()}</td>
+                    <td>
+                        <div class="btn-group btn-group-sm">
+                            <button class="btn btn-sm btn-primary" onclick="viewOrganization('${org._id}')">
+                                <i class="fas fa-eye"></i>
+                            </button>
+                            <button class="btn btn-sm btn-success" onclick="impersonateOrg('${org._id}')">
+                                <i class="fas fa-user-secret"></i>
+                            </button>
+                            <button class="btn btn-sm btn-warning" onclick="editOrganization('${org._id}')">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        // Create organization
+        async function createOrganization() {
+            const orgData = {
+                name: document.getElementById('orgName').value,
+                domain: document.getElementById('orgDomain').value,
+                trialDays: parseInt(document.getElementById('trialDays').value),
+                adminFullName: document.getElementById('adminFullName').value,
+                adminEmail: document.getElementById('adminEmail').value,
+                adminPassword: document.getElementById('adminPassword').value
+            };
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/platform-admin/organizations`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${authToken}`
+                    },
+                    body: JSON.stringify(orgData)
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.error || 'Failed to create organization');
+                }
+
+                alert('Organization created successfully!');
+                bootstrap.Modal.getInstance(document.getElementById('createOrgModal')).hide();
+                document.getElementById('createOrgForm').reset();
+                loadOrganizations();
+            } catch (error) {
+                alert(error.message);
+            }
+        }
+
+        // Impersonate organization
+        async function impersonateOrg(orgId) {
+            if (!confirm('Impersonate this organization? You will be logged in as their super admin.')) return;
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/platform-admin/organizations/${orgId}/impersonate`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+
+                const data = await response.json();
+
+                // Store impersonation token and redirect to dashboard
+                localStorage.setItem('authToken', data.token);
+                localStorage.setItem('impersonationMode', 'true');
+                window.open('dashboard.html', '_blank');
+            } catch (error) {
+                alert('Failed to impersonate organization');
+            }
+        }
+
+        // Show section
+        function showSection(sectionName) {
+            // Hide all sections
+            document.querySelectorAll('[id$="Section"]').forEach(section => {
+                section.classList.add('d-none');
+            });
+
+            // Show selected section
+            const section = document.getElementById(`${sectionName}Section`);
+            if (section) {
+                section.classList.remove('d-none');
+            }
+
+            // Update menu
+            document.querySelectorAll('.menu-item').forEach(item => {
+                item.classList.remove('active');
+            });
+            document.querySelector(`[data-section="${sectionName}"]`)?.classList.add('active');
+
+            // Update page title
+            const titles = {
+                dashboard: 'Dashboard',
+                organizations: 'Organizations',
+                subscriptions: 'Subscriptions',
+                plans: 'Subscription Plans',
+                analytics: 'Analytics',
+                'platform-admins': 'Platform Admins'
+            };
+            document.getElementById('pageTitle').textContent = titles[sectionName] || sectionName;
+
+            currentSection = sectionName;
+
+            // Load section data
+            if (sectionName === 'dashboard') loadDashboard();
+            if (sectionName === 'organizations') loadOrganizations();
+        }
+
+        // Event Listeners
+        document.addEventListener('DOMContentLoaded', function() {
+            if (!checkAuth()) return;
+
+            loadAdminInfo();
+            loadDashboard();
+
+            // Sidebar menu
+            document.querySelectorAll('.menu-item[data-section]').forEach(item => {
+                item.addEventListener('click', function() {
+                    showSection(this.dataset.section);
+                });
+            });
+
+            // Toggle sidebar
+            document.getElementById('toggleSidebar').addEventListener('click', function() {
+                document.getElementById('sidebar').classList.toggle('collapsed');
+                document.getElementById('mainContent').classList.toggle('expanded');
+            });
+
+            // Logout
+            document.getElementById('logoutBtn').addEventListener('click', function() {
+                if (confirm('Are you sure you want to logout?')) {
+                    localStorage.removeItem('platformAdminToken');
+                    window.location.href = 'platform-admin-login.html';
+                }
+            });
+
+            // Create organization
+            document.getElementById('createOrgBtn')?.addEventListener('click', function() {
+                new bootstrap.Modal(document.getElementById('createOrgModal')).show();
+            });
+
+            document.getElementById('submitOrgBtn')?.addEventListener('click', createOrganization);
+
+            // Search and filter
+            document.getElementById('orgSearch')?.addEventListener('input', loadOrganizations);
+            document.getElementById('statusFilter')?.addEventListener('change', loadOrganizations);
+        });
+    </script>
+</body>
+</html>
