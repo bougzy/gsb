@@ -3280,17 +3280,24 @@
                         <td><span class="badge bg-${durationBadge}">${durationText}</span></td>
                         <td><span class="badge bg-${getStatusColor(record.verificationStatus || record.status)}">${record.verificationStatus || record.status}</span></td>
                         <td>
-                            ${(record.verificationStatus === 'pending' || record.status === 'pending') ? `
+                            <div class="btn-group" role="group">
+                                <!-- Quick Actions -->
                                 <button class="btn btn-sm btn-success action-btn" onclick="updateAttendanceStatus('${record._id}', 'verified')" title="Verify">
                                     <i class="fas fa-check"></i>
+                                </button>
+                                <button class="btn btn-sm btn-warning action-btn" onclick="updateAttendanceStatus('${record._id}', 'pending')" title="Set Pending">
+                                    <i class="fas fa-clock"></i>
                                 </button>
                                 <button class="btn btn-sm btn-danger action-btn" onclick="updateAttendanceStatus('${record._id}', 'rejected')" title="Reject">
                                     <i class="fas fa-times"></i>
                                 </button>
-                            ` : ''}
-                            <button class="btn btn-sm btn-info action-btn" onclick="viewAttendanceDetails('${record._id}')" title="View Details">
-                                <i class="fas fa-eye"></i>
-                            </button>
+                                <button class="btn btn-sm btn-secondary action-btn" onclick="updateAttendanceStatus('${record._id}', 'flagged')" title="Flag for Review">
+                                    <i class="fas fa-flag"></i>
+                                </button>
+                                <button class="btn btn-sm btn-info action-btn" onclick="viewAttendanceDetails('${record._id}')" title="View Details">
+                                    <i class="fas fa-eye"></i>
+                                </button>
+                            </div>
                         </td>
                     </tr>
                 `;
@@ -3299,6 +3306,23 @@
 
         // Update attendance status
         async function updateAttendanceStatus(attendanceId, status) {
+            // Status labels for user-friendly messages
+            const statusLabels = {
+                'verified': 'Verified',
+                'pending': 'Pending',
+                'rejected': 'Rejected',
+                'flagged': 'Flagged for Review'
+            };
+
+            const statusLabel = statusLabels[status] || status;
+
+            // Confirmation for critical actions
+            if (status === 'rejected') {
+                if (!confirm(`Are you sure you want to REJECT this attendance?\n\nThis action can be reversed later if needed.`)) {
+                    return;
+                }
+            }
+
             try {
                 const response = await fetch(`${API_BASE_URL}/attendance/${attendanceId}/status`, {
                     method: 'PUT',
@@ -3310,14 +3334,15 @@
                 });
 
                 if (response.ok) {
-                    showAlert(`Attendance ${status} successfully!`, 'success');
+                    showAlert(`✓ Attendance status changed to: ${statusLabel}`, 'success');
                     loadAllAttendance();
                 } else {
-                    showAlert('Failed to update attendance status', 'danger');
+                    const error = await response.json();
+                    showAlert(error.error || 'Failed to update attendance status', 'danger');
                 }
             } catch (error) {
                 console.error('Error updating attendance:', error);
-                showAlert('Error updating attendance status', 'danger');
+                showAlert('Error updating attendance status. Please try again.', 'danger');
             }
         }
 
