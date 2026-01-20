@@ -3207,9 +3207,17 @@ app.post('/api/attend/smartphone', async (req, res) => {
     const skipLocationValidation = process.env.SKIP_LOCATION_VALIDATION === 'true' ||
                                    process.env.NODE_ENV === 'development';
 
+    // Initialize these variables outside the block so they're accessible later
+    let locationValidation;
+    let spoofingDetection = {
+      isSuspicious: false,
+      riskLevel: 'low',
+      warnings: []
+    };
+
     if (!skipLocationValidation) {
       // STRICT LOCATION VALIDATION
-      const locationValidation = validateLocation(
+      locationValidation = validateLocation(
         locationData.latitude,
         locationData.longitude,
         meeting.location.latitude,
@@ -3225,7 +3233,7 @@ app.post('/api/attend/smartphone', async (req, res) => {
       }).sort({ createdAt: -1 });
 
       // Detect location spoofing
-      const spoofingDetection = detectLocationSpoofing(
+      spoofingDetection = detectLocationSpoofing(
         locationData,
         previousAttendance ? [previousAttendance.locationData.coordinates] : []
       );
@@ -3287,6 +3295,19 @@ app.post('/api/attend/smartphone', async (req, res) => {
       }
     } else {
       console.log('⚠️  Location validation SKIPPED (development mode or SKIP_LOCATION_VALIDATION=true)');
+      // Create a default locationValidation object when validation is skipped
+      locationValidation = {
+        isWithinRadius: true,
+        distance: 0,
+        confidenceScore: 100,
+        checks: {
+          validCoordinates: true,
+          basicRadiusCheck: true,
+          accuracyAdjustedCheck: true,
+          strictCheck: true
+        },
+        messages: ['Location validation skipped']
+      };
     }
     
     // Check for duplicates
