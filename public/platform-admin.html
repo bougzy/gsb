@@ -986,16 +986,16 @@
                     <td>${new Date(org.createdAt).toLocaleDateString()}</td>
                     <td>
                         <div class="btn-group btn-group-sm">
-                            <button class="btn btn-sm btn-primary" onclick="viewOrganization('${org._id}')" title="View Details">
+                            <button class="btn btn-sm btn-primary org-action-btn" data-action="view" data-org-id="${org._id}" title="View Details">
                                 <i class="fas fa-eye"></i>
                             </button>
-                            <button class="btn btn-sm btn-info" onclick="assignPlanToOrg('${org._id}', '${org.name}')" title="Assign Plan">
+                            <button class="btn btn-sm btn-info org-action-btn" data-action="assign-plan" data-org-id="${org._id}" data-org-name="${org.name}" title="Assign Plan">
                                 <i class="fas fa-tags"></i>
                             </button>
-                            <button class="btn btn-sm btn-success" onclick="impersonateOrg('${org._id}')" title="Impersonate">
+                            <button class="btn btn-sm btn-success org-action-btn" data-action="impersonate" data-org-id="${org._id}" title="Impersonate">
                                 <i class="fas fa-user-secret"></i>
                             </button>
-                            <button class="btn btn-sm btn-warning" onclick="editOrganization('${org._id}')" title="Edit">
+                            <button class="btn btn-sm btn-warning org-action-btn" data-action="edit" data-org-id="${org._id}" title="Edit">
                                 <i class="fas fa-edit"></i>
                             </button>
                         </div>
@@ -1081,7 +1081,7 @@
                         <td>$${mrr.toFixed(2)}</td>
                         <td>
                             <div class="btn-group btn-group-sm">
-                                <button class="btn btn-sm btn-primary" onclick="viewOrganization('${org._id}')">
+                                <button class="btn btn-sm btn-primary org-action-btn" data-action="view" data-org-id="${org._id}">
                                     <i class="fas fa-eye"></i>
                                 </button>
                             </div>
@@ -1212,7 +1212,7 @@
                     <td>${new Date(admin.createdAt).toLocaleDateString()}</td>
                     <td>
                         <div class="btn-group btn-group-sm">
-                            <button class="btn btn-sm btn-warning" onclick="editAdmin('${admin._id}')">
+                            <button class="btn btn-sm btn-warning admin-action-btn" data-action="edit" data-admin-id="${admin._id}">
                                 <i class="fas fa-edit"></i>
                             </button>
                         </div>
@@ -1416,6 +1416,46 @@
             // Search and filter
             document.getElementById('orgSearch')?.addEventListener('input', loadOrganizations);
             document.getElementById('statusFilter')?.addEventListener('change', loadOrganizations);
+
+            // Event delegation for organization action buttons
+            document.addEventListener('click', function(e) {
+                const btn = e.target.closest('.org-action-btn');
+                if (!btn) return;
+
+                const action = btn.dataset.action;
+                const orgId = btn.dataset.orgId;
+                const orgName = btn.dataset.orgName;
+
+                switch(action) {
+                    case 'view':
+                        viewOrganization(orgId);
+                        break;
+                    case 'assign-plan':
+                        assignPlanToOrg(orgId, orgName);
+                        break;
+                    case 'impersonate':
+                        impersonateOrg(orgId);
+                        break;
+                    case 'edit':
+                        editOrganization(orgId);
+                        break;
+                }
+            });
+
+            // Event delegation for admin action buttons
+            document.addEventListener('click', function(e) {
+                const btn = e.target.closest('.admin-action-btn');
+                if (!btn) return;
+
+                const action = btn.dataset.action;
+                const adminId = btn.dataset.adminId;
+
+                switch(action) {
+                    case 'edit':
+                        editAdmin(adminId);
+                        break;
+                }
+            });
         });
     </script>
 </body>
