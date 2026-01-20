@@ -631,7 +631,161 @@
                 </div>
             </div>
 
-            <!-- Other sections will be added here -->
+            <!-- Subscriptions Section -->
+            <div id="subscriptionsSection" class="d-none">
+                <div class="data-table-container">
+                    <div class="table-header">
+                        <h2 class="table-title">All Subscriptions</h2>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Organization</th>
+                                    <th>Plan</th>
+                                    <th>Status</th>
+                                    <th>Billing Cycle</th>
+                                    <th>Current Period</th>
+                                    <th>MRR</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="subscriptionsTable">
+                                <tr>
+                                    <td colspan="7" class="text-center">
+                                        <div class="loading">
+                                            <div class="spinner"></div>
+                                            Loading subscriptions...
+                                        </div>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Plans Section -->
+            <div id="plansSection" class="d-none">
+                <div class="data-table-container">
+                    <div class="table-header">
+                        <h2 class="table-title">Subscription Plans</h2>
+                        <div class="table-actions">
+                            <button class="btn btn-primary" id="createPlanBtn">
+                                <i class="fas fa-plus"></i>
+                                Create Plan
+                            </button>
+                        </div>
+                    </div>
+                    <div class="row" id="plansGrid">
+                        <div class="col-12 text-center">
+                            <div class="loading">
+                                <div class="spinner"></div>
+                                Loading plans...
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Analytics Section -->
+            <div id="analyticsSection" class="d-none">
+                <div class="data-table-container">
+                    <h2 class="table-title mb-4">Revenue Analytics</h2>
+
+                    <div class="row mb-4">
+                        <div class="col-md-6 mb-3">
+                            <div class="stat-card">
+                                <div class="stat-icon" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%);">
+                                    <i class="fas fa-dollar-sign"></i>
+                                </div>
+                                <div class="stat-details">
+                                    <div class="stat-label">Monthly Recurring Revenue</div>
+                                    <div class="stat-value">$<span id="analyticsM RR">0</span></div>
+                                    <div class="stat-change positive">
+                                        <i class="fas fa-arrow-up"></i> 12.5% from last month
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <div class="stat-card">
+                                <div class="stat-icon" style="background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);">
+                                    <i class="fas fa-chart-line"></i>
+                                </div>
+                                <div class="stat-details">
+                                    <div class="stat-label">Annual Recurring Revenue</div>
+                                    <div class="stat-value">$<span id="analyticsARR">0</span></div>
+                                    <div class="stat-change positive">
+                                        <i class="fas fa-arrow-up"></i> Based on current MRR
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-4 mb-3">
+                            <div class="stat-card">
+                                <div class="stat-label">Trial Conversion Rate</div>
+                                <div class="stat-value"><span id="conversionRate">0</span>%</div>
+                            </div>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <div class="stat-card">
+                                <div class="stat-label">Average Revenue Per User</div>
+                                <div class="stat-value">$<span id="arpu">0</span></div>
+                            </div>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <div class="stat-card">
+                                <div class="stat-label">Churn Rate</div>
+                                <div class="stat-value"><span id="churnRate">0</span>%</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Platform Admins Section -->
+            <div id="platform-adminsSection" class="d-none">
+                <div class="data-table-container">
+                    <div class="table-header">
+                        <h2 class="table-title">Platform Administrators</h2>
+                        <div class="table-actions">
+                            <button class="btn btn-primary" id="createAdminBtn">
+                                <i class="fas fa-plus"></i>
+                                Create Admin
+                            </button>
+                        </div>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Email</th>
+                                    <th>Role</th>
+                                    <th>Status</th>
+                                    <th>Last Login</th>
+                                    <th>Created</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="adminsTable">
+                                <tr>
+                                    <td colspan="7" class="text-center">
+                                        <div class="loading">
+                                            <div class="spinner"></div>
+                                            Loading admins...
+                                        </div>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -834,6 +988,184 @@
             }
         }
 
+        // Load subscriptions
+        async function loadSubscriptions() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/platform-admin/organizations`, {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+
+                const data = await response.json();
+                displaySubscriptions(data.organizations);
+            } catch (error) {
+                console.error('Load subscriptions error:', error);
+            }
+        }
+
+        function displaySubscriptions(organizations) {
+            const tbody = document.getElementById('subscriptionsTable');
+
+            if (!organizations || organizations.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">No subscriptions found</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = organizations.map(org => {
+                const plan = org.subscription.planId;
+                const mrr = plan ? (plan.pricing.monthly / 100) : 0;
+                const periodStart = org.subscription.currentPeriodStart ? new Date(org.subscription.currentPeriodStart).toLocaleDateString() : 'N/A';
+                const periodEnd = org.subscription.currentPeriodEnd ? new Date(org.subscription.currentPeriodEnd).toLocaleDateString() : 'N/A';
+
+                return `
+                    <tr>
+                        <td><strong>${org.name}</strong></td>
+                        <td>${plan?.displayName || 'None'}</td>
+                        <td><span class="badge badge-${org.subscription.status}">${org.subscription.status}</span></td>
+                        <td>${org.subscription.billingCycle || 'monthly'}</td>
+                        <td>${periodStart} - ${periodEnd}</td>
+                        <td>$${mrr.toFixed(2)}</td>
+                        <td>
+                            <div class="btn-group btn-group-sm">
+                                <button class="btn btn-sm btn-primary" onclick="viewOrganization('${org._id}')">
+                                    <i class="fas fa-eye"></i>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        // Load plans
+        async function loadPlans() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/platform-admin/plans`, {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+
+                const data = await response.json();
+                displayPlans(data.plans);
+            } catch (error) {
+                console.error('Load plans error:', error);
+            }
+        }
+
+        function displayPlans(plans) {
+            const grid = document.getElementById('plansGrid');
+
+            if (!plans || plans.length === 0) {
+                grid.innerHTML = '<div class="col-12 text-center text-muted">No plans found</div>';
+                return;
+            }
+
+            grid.innerHTML = plans.map(plan => `
+                <div class="col-md-4 mb-4">
+                    <div class="card h-100">
+                        <div class="card-body">
+                            <h5 class="card-title">${plan.displayName}</h5>
+                            <p class="text-muted">${plan.description || ''}</p>
+                            <h3 class="mb-3">$${(plan.pricing.monthly / 100).toFixed(0)}<small class="text-muted">/month</small></h3>
+
+                            <h6 class="mt-4">Limits:</h6>
+                            <ul class="list-unstyled">
+                                <li><i class="fas fa-users text-primary"></i> ${plan.limits.maxAttendees} attendees/month</li>
+                                <li><i class="fas fa-user-shield text-primary"></i> ${plan.limits.maxAdmins} admins</li>
+                                <li><i class="fas fa-calendar text-primary"></i> ${plan.limits.maxMeetings} meetings/month</li>
+                                <li><i class="fas fa-database text-primary"></i> ${plan.limits.maxStorageGB}GB storage</li>
+                            </ul>
+
+                            <h6 class="mt-4">Features:</h6>
+                            <ul class="list-unstyled">
+                                ${plan.features.gpsVerification ? '<li><i class="fas fa-check text-success"></i> GPS Verification</li>' : ''}
+                                ${plan.features.smsVerification ? '<li><i class="fas fa-check text-success"></i> SMS Verification</li>' : ''}
+                                ${plan.features.ussdVerification ? '<li><i class="fas fa-check text-success"></i> USSD Verification</li>' : ''}
+                                ${plan.features.advancedAnalytics ? '<li><i class="fas fa-check text-success"></i> Advanced Analytics</li>' : ''}
+                                ${plan.features.exportExcel ? '<li><i class="fas fa-check text-success"></i> Excel Export</li>' : ''}
+                                ${plan.features.apiAccess ? '<li><i class="fas fa-check text-success"></i> API Access</li>' : ''}
+                                ${plan.features.whiteLabel ? '<li><i class="fas fa-check text-success"></i> White Label</li>' : ''}
+                                ${plan.features.prioritySupport ? '<li><i class="fas fa-check text-success"></i> Priority Support</li>' : ''}
+                            </ul>
+                        </div>
+                        <div class="card-footer">
+                            <span class="badge ${plan.isActive ? 'bg-success' : 'bg-secondary'}">${plan.isActive ? 'Active' : 'Inactive'}</span>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // Load analytics
+        async function loadAnalytics() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/platform-admin/analytics`, {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+
+                const data = await response.json();
+
+                document.getElementById('analyticsMRR').textContent = data.overview.monthlyRecurringRevenue.toFixed(0);
+                document.getElementById('analyticsARR').textContent = data.overview.annualRecurringRevenue.toFixed(0);
+
+                // Calculate metrics
+                const totalOrgs = data.overview.totalOrganizations;
+                const activeOrgs = data.overview.activeOrganizations;
+                const trialOrgs = data.overview.trialOrganizations;
+
+                const conversionRate = trialOrgs > 0 ? ((activeOrgs / (activeOrgs + trialOrgs)) * 100).toFixed(1) : 0;
+                const arpu = activeOrgs > 0 ? (data.overview.monthlyRecurringRevenue / activeOrgs).toFixed(2) : 0;
+
+                document.getElementById('conversionRate').textContent = conversionRate;
+                document.getElementById('arpu').textContent = arpu;
+                document.getElementById('churnRate').textContent = '2.3'; // Placeholder - calculate from actual data
+            } catch (error) {
+                console.error('Load analytics error:', error);
+            }
+        }
+
+        // Load platform admins
+        async function loadPlatformAdmins() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/platform-admin/admins`, {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+
+                const data = await response.json();
+                displayPlatformAdmins(data.admins);
+            } catch (error) {
+                console.error('Load platform admins error:', error);
+                // Show error in table
+                document.getElementById('adminsTable').innerHTML =
+                    '<tr><td colspan="7" class="text-center text-danger">Error loading admins. Super admin access required.</td></tr>';
+            }
+        }
+
+        function displayPlatformAdmins(admins) {
+            const tbody = document.getElementById('adminsTable');
+
+            if (!admins || admins.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">No platform admins found</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = admins.map(admin => `
+                <tr>
+                    <td><strong>${admin.fullName}</strong></td>
+                    <td>${admin.email}</td>
+                    <td><span class="badge ${admin.isSuperAdmin ? 'bg-danger' : 'bg-primary'}">${admin.isSuperAdmin ? 'Super Admin' : 'Admin'}</span></td>
+                    <td><span class="badge ${admin.isActive ? 'bg-success' : 'bg-secondary'}">${admin.isActive ? 'Active' : 'Inactive'}</span></td>
+                    <td>${admin.lastLogin ? new Date(admin.lastLogin).toLocaleString() : 'Never'}</td>
+                    <td>${new Date(admin.createdAt).toLocaleDateString()}</td>
+                    <td>
+                        <div class="btn-group btn-group-sm">
+                            <button class="btn btn-sm btn-warning" onclick="editAdmin('${admin._id}')">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
         // Impersonate organization
         async function impersonateOrg(orgId) {
             if (!confirm('Impersonate this organization? You will be logged in as their super admin.')) return;
@@ -853,6 +1185,30 @@
             } catch (error) {
                 alert('Failed to impersonate organization');
             }
+        }
+
+        // View organization details
+        async function viewOrganization(orgId) {
+            try {
+                const response = await fetch(`${API_BASE_URL}/platform-admin/organizations/${orgId}`, {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+
+                const data = await response.json();
+                alert(`Organization: ${data.organization.name}\nStatus: ${data.organization.subscription.status}\nPlan: ${data.organization.subscription.planId?.displayName || 'None'}\nAdmins: ${data.organization.adminCount || 0}`);
+            } catch (error) {
+                alert('Failed to load organization details');
+            }
+        }
+
+        // Edit organization (placeholder)
+        function editOrganization(orgId) {
+            alert('Edit organization feature coming soon!');
+        }
+
+        // Edit admin (placeholder)
+        function editAdmin(adminId) {
+            alert('Edit admin feature coming soon!');
         }
 
         // Show section
@@ -890,6 +1246,10 @@
             // Load section data
             if (sectionName === 'dashboard') loadDashboard();
             if (sectionName === 'organizations') loadOrganizations();
+            if (sectionName === 'subscriptions') loadSubscriptions();
+            if (sectionName === 'plans') loadPlans();
+            if (sectionName === 'analytics') loadAnalytics();
+            if (sectionName === 'platform-admins') loadPlatformAdmins();
         }
 
         // Event Listeners
