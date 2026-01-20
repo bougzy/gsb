@@ -4352,6 +4352,26 @@ app.get('/api/meetings/:meetingId/attendance', authenticateToken, async (req, re
   }
 });
 
+// Get individual attendance record
+app.get('/api/attendance/:attendanceId', authenticateToken, async (req, res) => {
+  try {
+    const attendance = await AttendanceRecord.findOne({
+      _id: req.params.attendanceId,
+      organizationId: req.user.organizationId._id
+    }).populate('meetingId');
+
+    if (!attendance) {
+      return res.status(404).json({ error: 'Attendance record not found' });
+    }
+
+    res.json(attendance);
+
+  } catch (error) {
+    console.error('Get attendance error:', error);
+    res.status(500).json({ error: 'Failed to load attendance record' });
+  }
+});
+
 app.put('/api/attendance/:attendanceId/status', authenticateToken, async (req, res) => {
   try {
     const { status, notes } = req.body;

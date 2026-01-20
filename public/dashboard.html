@@ -693,7 +693,7 @@
                         </select>
                     </div>
                     <div class="col-md-4 mb-3">
-                        <button class="btn btn-primary-custom w-100" onclick="loadAllAttendance()">
+                        <button class="btn btn-primary-custom w-100" id="attendanceFilterBtn">
                             <i class="fas fa-filter me-2"></i> Filter
                         </button>
                     </div>
@@ -1680,7 +1680,9 @@
                 });
 
                 if (response.ok) {
-                    const records = await response.json();
+                    const data = await response.json();
+                    // Handle both array and object responses
+                    const records = Array.isArray(data) ? data : (data.attendance || []);
                     displayRecentAttendance(records.slice(0, 5));
                 }
             } catch (error) {
@@ -4013,6 +4015,12 @@
             const updateMeetingBtn = document.getElementById('updateMeetingBtn');
             if (updateMeetingBtn) {
                 updateMeetingBtn.addEventListener('click', updateMeeting);
+            }
+
+            // Attendance filter button
+            const attendanceFilterBtn = document.getElementById('attendanceFilterBtn');
+            if (attendanceFilterBtn) {
+                attendanceFilterBtn.addEventListener('click', loadAllAttendance);
             }
 
             // Setup event delegation for meeting action buttons
