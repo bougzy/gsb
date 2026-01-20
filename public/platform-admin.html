@@ -924,14 +924,19 @@
                 return;
             }
 
-            tbody.innerHTML = organizations.map(org => `
+            tbody.innerHTML = organizations.map(org => {
+                const subscription = org.subscription || {};
+                const plan = subscription.planId || null;
+                const status = subscription.status || 'trial';
+
+                return `
                 <tr>
                     <td>
                         <strong>${org.name}</strong><br>
                         <small class="text-muted">${org.domain}</small>
                     </td>
-                    <td>${org.subscription.planId?.displayName || 'None'}</td>
-                    <td><span class="badge badge-${org.subscription.status}">${org.subscription.status}</span></td>
+                    <td>${plan?.displayName || 'None'}</td>
+                    <td><span class="badge badge-${status}">${status}</span></td>
                     <td>${org.adminCount || 0}</td>
                     <td>${org.meetingCount || 0}</td>
                     <td>${org.attendanceCount || 0}</td>
@@ -950,7 +955,8 @@
                         </div>
                     </td>
                 </tr>
-            `).join('');
+                `;
+            }).join('');
         }
 
         // Create organization
@@ -1011,17 +1017,20 @@
             }
 
             tbody.innerHTML = organizations.map(org => {
-                const plan = org.subscription.planId;
+                const subscription = org.subscription || {};
+                const plan = subscription.planId || null;
                 const mrr = plan ? (plan.pricing.monthly / 100) : 0;
-                const periodStart = org.subscription.currentPeriodStart ? new Date(org.subscription.currentPeriodStart).toLocaleDateString() : 'N/A';
-                const periodEnd = org.subscription.currentPeriodEnd ? new Date(org.subscription.currentPeriodEnd).toLocaleDateString() : 'N/A';
+                const periodStart = subscription.currentPeriodStart ? new Date(subscription.currentPeriodStart).toLocaleDateString() : 'N/A';
+                const periodEnd = subscription.currentPeriodEnd ? new Date(subscription.currentPeriodEnd).toLocaleDateString() : 'N/A';
+                const status = subscription.status || 'trial';
+                const billingCycle = subscription.billingCycle || 'monthly';
 
                 return `
                     <tr>
                         <td><strong>${org.name}</strong></td>
                         <td>${plan?.displayName || 'None'}</td>
-                        <td><span class="badge badge-${org.subscription.status}">${org.subscription.status}</span></td>
-                        <td>${org.subscription.billingCycle || 'monthly'}</td>
+                        <td><span class="badge badge-${status}">${status}</span></td>
+                        <td>${billingCycle}</td>
                         <td>${periodStart} - ${periodEnd}</td>
                         <td>$${mrr.toFixed(2)}</td>
                         <td>
@@ -1195,7 +1204,12 @@
                 });
 
                 const data = await response.json();
-                alert(`Organization: ${data.organization.name}\nStatus: ${data.organization.subscription.status}\nPlan: ${data.organization.subscription.planId?.displayName || 'None'}\nAdmins: ${data.organization.adminCount || 0}`);
+                const org = data.organization;
+                const subscription = org.subscription || {};
+                const plan = subscription.planId || null;
+                const status = subscription.status || 'trial';
+
+                alert(`Organization: ${org.name}\nStatus: ${status}\nPlan: ${plan?.displayName || 'None'}\nAdmins: ${org.adminCount || 0}\nMeetings: ${org.meetingCount || 0}\nAttendance: ${org.attendanceCount || 0}`);
             } catch (error) {
                 alert('Failed to load organization details');
             }
