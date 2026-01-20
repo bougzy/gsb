@@ -146,7 +146,7 @@
                 <!-- Current Location Tab -->
                 <div class="tab-pane fade show active" id="current-location">
                     <div class="text-center">
-                        <button class="get-location-btn" onclick="getMyLocation()">
+                        <button class="get-location-btn" id="getLocationBtn">
                             <i class="fas fa-location-arrow me-2"></i>Get My Current Location
                         </button>
                     </div>
@@ -158,9 +158,8 @@
                         <label class="form-label fw-bold">🔍 Search for any address or place:</label>
                         <div class="input-group">
                             <input type="text" class="form-control form-control-lg" id="addressSearch"
-                                   placeholder="e.g., Eko Hotel Lagos, National Mosque Abuja, Victoria Island..."
-                                   onkeypress="if(event.key==='Enter') searchLocation()">
-                            <button class="btn btn-primary" onclick="searchLocation()">
+                                   placeholder="e.g., Eko Hotel Lagos, National Mosque Abuja, Victoria Island...">
+                            <button class="btn btn-primary" id="searchBtn">
                                 <i class="fas fa-search me-2"></i>Search
                             </button>
                         </div>
@@ -176,12 +175,12 @@
                             <i class="fas fa-star me-2"></i>Quick Search - Popular Nigerian Locations:
                         </p>
                         <div class="d-flex flex-wrap gap-2">
-                            <button class="btn btn-sm btn-outline-primary" onclick="quickSearch('Eko Hotel Victoria Island Lagos')">Eko Hotel, Lagos</button>
-                            <button class="btn btn-sm btn-outline-primary" onclick="quickSearch('National Mosque Abuja Nigeria')">National Mosque, Abuja</button>
-                            <button class="btn btn-sm btn-outline-primary" onclick="quickSearch('University of Lagos Akoka')">UNILAG, Lagos</button>
-                            <button class="btn btn-sm btn-outline-primary" onclick="quickSearch('Murtala Muhammed Airport Lagos')">MMA, Lagos</button>
-                            <button class="btn btn-sm btn-outline-primary" onclick="quickSearch('Ikeja City Mall Lagos')">Ikeja City Mall</button>
-                            <button class="btn btn-sm btn-outline-primary" onclick="quickSearch('Port Harcourt Nigeria')">Port Harcourt</button>
+                            <button class="btn btn-sm btn-outline-primary quick-search-btn" data-query="Eko Hotel Victoria Island Lagos">Eko Hotel, Lagos</button>
+                            <button class="btn btn-sm btn-outline-primary quick-search-btn" data-query="National Mosque Abuja Nigeria">National Mosque, Abuja</button>
+                            <button class="btn btn-sm btn-outline-primary quick-search-btn" data-query="University of Lagos Akoka">UNILAG, Lagos</button>
+                            <button class="btn btn-sm btn-outline-primary quick-search-btn" data-query="Murtala Muhammed Airport Lagos">MMA, Lagos</button>
+                            <button class="btn btn-sm btn-outline-primary quick-search-btn" data-query="Ikeja City Mall Lagos">Ikeja City Mall</button>
+                            <button class="btn btn-sm btn-outline-primary quick-search-btn" data-query="Port Harcourt Nigeria">Port Harcourt</button>
                         </div>
                     </div>
                 </div>
@@ -202,7 +201,7 @@
                         <label class="form-label fw-bold">📍 Latitude:</label>
                         <div class="coordinate-box">
                             <span id="latitudeValue">-</span>
-                            <button class="copy-btn ms-3" onclick="copyToClipboard('latitudeValue')">
+                            <button class="copy-btn ms-3" data-copy="latitudeValue">
                                 <i class="fas fa-copy me-1"></i>Copy
                             </button>
                         </div>
@@ -212,7 +211,7 @@
                         <label class="form-label fw-bold">📍 Longitude:</label>
                         <div class="coordinate-box">
                             <span id="longitudeValue">-</span>
-                            <button class="copy-btn ms-3" onclick="copyToClipboard('longitudeValue')">
+                            <button class="copy-btn ms-3" data-copy="longitudeValue">
                                 <i class="fas fa-copy me-1"></i>Copy
                             </button>
                         </div>
@@ -243,7 +242,7 @@
                 </div>
 
                 <div class="mt-4 text-center">
-                    <button class="btn btn-outline-primary" onclick="location.href='dashboard.html'">
+                    <button class="btn btn-outline-primary" id="goToDashboardBtn">
                         <i class="fas fa-arrow-left me-2"></i>Go to Dashboard
                     </button>
                 </div>
@@ -473,9 +472,56 @@
             }, 2000);
         }
 
-        // Auto-get location on page load (optional)
-        // Uncomment the line below if you want location to be fetched automatically
-        // window.onload = getMyLocation;
+        // Event Listeners (CSP-compliant - no inline handlers)
+        document.addEventListener('DOMContentLoaded', function() {
+            // Get My Current Location button
+            const getLocationBtn = document.getElementById('getLocationBtn');
+            if (getLocationBtn) {
+                getLocationBtn.addEventListener('click', getMyLocation);
+            }
+
+            // Search button
+            const searchBtn = document.getElementById('searchBtn');
+            if (searchBtn) {
+                searchBtn.addEventListener('click', searchLocation);
+            }
+
+            // Search on Enter key
+            const addressSearch = document.getElementById('addressSearch');
+            if (addressSearch) {
+                addressSearch.addEventListener('keypress', function(e) {
+                    if (e.key === 'Enter') {
+                        searchLocation();
+                    }
+                });
+            }
+
+            // Quick search buttons
+            const quickSearchBtns = document.querySelectorAll('.quick-search-btn');
+            quickSearchBtns.forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const query = this.getAttribute('data-query');
+                    quickSearch(query);
+                });
+            });
+
+            // Copy buttons
+            const copyBtns = document.querySelectorAll('.copy-btn');
+            copyBtns.forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const elementId = this.getAttribute('data-copy');
+                    copyToClipboard(elementId);
+                });
+            });
+
+            // Go to Dashboard button
+            const dashboardBtn = document.getElementById('goToDashboardBtn');
+            if (dashboardBtn) {
+                dashboardBtn.addEventListener('click', function() {
+                    window.location.href = 'dashboard.html';
+                });
+            }
+        });
     </script>
 
     <!-- Bootstrap JS for tabs -->
