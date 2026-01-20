@@ -2433,25 +2433,17 @@ app.delete('/api/meetings/:meetingId', authenticateToken, async (req, res) => {
       });
     }
     
-    let action = 'MEETING_CANCELLED';
-    
-    if (hardDelete) {
-      // Hard delete - permanently remove from database
-      await Meeting.deleteOne({ _id: meeting._id });
-      
-      // Also delete related attendance records if specified
-      if (deleteAttendance) {
-        await AttendanceRecord.deleteMany({ meetingId: meeting._id });
-        await SMSLog.deleteMany({ meetingId: meeting._id });
-        await USSDSession.deleteMany({ meetingId: meeting._id });
-      }
-      action = 'MEETING_HARD_DELETED';
-    } else {
-      // Soft delete - mark as cancelled
-      meeting.status = 'cancelled';
-      meeting.updatedAt = new Date();
-      await meeting.save();
+    // ALWAYS hard delete - permanently remove from database
+    await Meeting.deleteOne({ _id: meeting._id });
+
+    // Also delete related attendance records, logs, and sessions
+    if (attendanceCount > 0 && deleteAttendance) {
+      await AttendanceRecord.deleteMany({ meetingId: meeting._id });
+      await SMSLog.deleteMany({ meetingId: meeting._id });
+      await USSDSession.deleteMany({ meetingId: meeting._id });
     }
+
+    const action = 'MEETING_DELETED';
     
     // Create audit log
     await AuditLog.create({
@@ -2475,10 +2467,12 @@ app.delete('/api/meetings/:meetingId', authenticateToken, async (req, res) => {
     
     res.json({
       success: true,
-      message: hardDelete ? 'Meeting permanently deleted' : 'Meeting cancelled',
+      message: 'Meeting permanently deleted',
       meetingId: meeting._id,
       meetingTitle: meeting.title,
-      action: hardDelete ? 'deleted' : 'cancelled',
+      action: 'deleted',
+      attendanceDeleted: deleteAttendance && attendanceCount > 0,
+      attendanceCount: attendanceCount,
       timestamp: new Date().toISOString()
     });
     
