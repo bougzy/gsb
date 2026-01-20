@@ -708,13 +708,14 @@
                                     <th>Meeting</th>
                                     <th>Method</th>
                                     <th>Check-in Time</th>
+                                    <th>Duration</th>
                                     <th>Status</th>
                                     <th>Actions</th>
                                 </tr>
                             </thead>
                             <tbody id="attendanceTable">
                                 <tr>
-                                    <td colspan="6" class="text-center text-muted">Loading...</td>
+                                    <td colspan="7" class="text-center text-muted">Loading...</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -1070,6 +1071,77 @@
                                 <div class="form-check">
                                     <input class="form-check-input" type="checkbox" id="allowUSSDMode" checked>
                                     <label class="form-check-label" for="allowUSSDMode">USSD</label>
+                                </div>
+                            </div>
+
+                            <!-- Time Verification Settings -->
+                            <div class="mb-3">
+                                <label class="form-label fw-bold">
+                                    <i class="fas fa-clock me-2"></i>Time Verification Settings
+                                </label>
+                                <div class="alert alert-info alert-sm">
+                                    <small>
+                                        <i class="fas fa-info-circle me-1"></i>
+                                        Require attendees to stay at the location for a minimum duration before approval
+                                    </small>
+                                </div>
+
+                                <div class="form-check mb-3">
+                                    <input class="form-check-input" type="checkbox" id="requireMinimumStay">
+                                    <label class="form-check-label" for="requireMinimumStay">
+                                        <strong>Require Minimum Stay Duration</strong>
+                                        <br><small class="text-muted">Attendees must stay at location for specified time</small>
+                                    </label>
+                                </div>
+
+                                <div id="timeVerificationOptions" style="display: none;">
+                                    <div class="row mb-3">
+                                        <div class="col-md-6">
+                                            <label class="form-label">Minimum Stay Required (minutes) *</label>
+                                            <input type="number" class="form-control" id="minimumStayMinutes"
+                                                   value="30" min="1" max="300">
+                                            <small class="text-muted">How long attendees must stay (e.g., 30 minutes)</small>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label class="form-label">Auto-Verify After (minutes)</label>
+                                            <input type="number" class="form-control" id="autoVerifyMinutes"
+                                                   value="30" min="1" max="300">
+                                            <small class="text-muted">Auto-approve when this duration is met</small>
+                                        </div>
+                                    </div>
+
+                                    <div class="form-check mb-2">
+                                        <input class="form-check-input" type="checkbox" id="enableContinuousMonitoring">
+                                        <label class="form-check-label" for="enableContinuousMonitoring">
+                                            <strong>Enable Continuous Location Monitoring</strong>
+                                            <br><small class="text-muted">Track if attendee stays at location throughout duration</small>
+                                        </label>
+                                    </div>
+
+                                    <div id="monitoringOptions" style="display: none;" class="ms-4 mt-2">
+                                        <div class="row">
+                                            <div class="col-md-6 mb-2">
+                                                <label class="form-label small">Check Interval (minutes)</label>
+                                                <input type="number" class="form-control form-control-sm"
+                                                       id="monitoringInterval" value="5" min="1" max="30">
+                                                <small class="text-muted">How often to check location</small>
+                                            </div>
+                                            <div class="col-md-6 mb-2">
+                                                <label class="form-label small">Max Allowed Absence (minutes)</label>
+                                                <input type="number" class="form-control form-control-sm"
+                                                       id="maxAllowedAbsence" value="2" min="1" max="15">
+                                                <small class="text-muted">Allowed time outside location</small>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="form-check mt-2">
+                                        <input class="form-check-input" type="checkbox" id="autoVerifyAfterStay" checked>
+                                        <label class="form-check-label" for="autoVerifyAfterStay">
+                                            <strong>Auto-Approve When Duration Met</strong>
+                                            <br><small class="text-muted">Automatically verify attendance after minimum stay</small>
+                                        </label>
+                                    </div>
                                 </div>
                             </div>
                         </form>
@@ -2514,7 +2586,16 @@
                             timeWindowMinutes: 5
                         }
                     },
-                    customFormFields: customFields
+                    customFormFields: customFields,
+                    timeVerification: {
+                        requireMinimumStay: document.getElementById('requireMinimumStay').checked,
+                        minimumStayMinutes: parseInt(document.getElementById('minimumStayMinutes').value) || 30,
+                        enableContinuousMonitoring: document.getElementById('enableContinuousMonitoring').checked,
+                        monitoringInterval: parseInt(document.getElementById('monitoringInterval').value) || 5,
+                        maxAllowedAbsence: parseInt(document.getElementById('maxAllowedAbsence').value) || 2,
+                        autoVerifyAfterStay: document.getElementById('autoVerifyAfterStay').checked,
+                        autoVerifyMinutes: parseInt(document.getElementById('autoVerifyMinutes').value) || 30
+                    }
                 };
 
                 console.log('Creating meeting with data:', meetingData);
@@ -3155,32 +3236,65 @@
         function displayAllAttendance(records) {
             const tbody = document.getElementById('attendanceTable');
             if (!records || records.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">No attendance records found</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">No attendance records found</td></tr>';
                 return;
             }
 
-            tbody.innerHTML = records.map(record => `
-                <tr>
-                    <td>${record.attendeeInfo?.fullName || 'N/A'}</td>
-                    <td>${record.meeting?.title || 'N/A'}</td>
-                    <td><span class="badge bg-info">${record.verificationType || 'N/A'}</span></td>
-                    <td>${new Date(record.checkInTime).toLocaleString()}</td>
-                    <td><span class="badge bg-${getStatusColor(record.verificationStatus)}">${record.verificationStatus}</span></td>
-                    <td>
-                        ${record.verificationStatus === 'pending' ? `
-                            <button class="btn btn-sm btn-success action-btn" onclick="updateAttendanceStatus('${record._id}', 'verified')" title="Verify">
-                                <i class="fas fa-check"></i>
+            tbody.innerHTML = records.map(record => {
+                // Calculate duration
+                let durationText = 'In progress';
+                let durationBadge = 'secondary';
+
+                if (record.timeTracking) {
+                    const checkIn = new Date(record.timeTracking.checkInTime);
+                    const checkOut = record.timeTracking.checkOutTime ? new Date(record.timeTracking.checkOutTime) : new Date();
+                    const durationMinutes = Math.floor((checkOut - checkIn) / 60000);
+
+                    if (record.timeTracking.checkOutTime) {
+                        durationText = `${durationMinutes} min`;
+                        durationBadge = 'info';
+                    } else {
+                        durationText = `${durationMinutes} min (ongoing)`;
+                        durationBadge = 'warning';
+                    }
+
+                    // Check if meets minimum requirement
+                    if (record.verificationDetails?.minimumStayRequired > 0) {
+                        const required = record.verificationDetails.minimumStayRequired;
+                        if (durationMinutes >= required) {
+                            durationText += ` ✓`;
+                            durationBadge = 'success';
+                        } else {
+                            durationText += ` (${required} min required)`;
+                            durationBadge = 'danger';
+                        }
+                    }
+                }
+
+                return `
+                    <tr>
+                        <td>${record.attendeeInfo?.fullName || 'N/A'}</td>
+                        <td>${record.meeting?.title || 'N/A'}</td>
+                        <td><span class="badge bg-info">${record.verificationType || 'N/A'}</span></td>
+                        <td>${new Date(record.timeTracking?.checkInTime || record.checkInTime).toLocaleString()}</td>
+                        <td><span class="badge bg-${durationBadge}">${durationText}</span></td>
+                        <td><span class="badge bg-${getStatusColor(record.verificationStatus || record.status)}">${record.verificationStatus || record.status}</span></td>
+                        <td>
+                            ${(record.verificationStatus === 'pending' || record.status === 'pending') ? `
+                                <button class="btn btn-sm btn-success action-btn" onclick="updateAttendanceStatus('${record._id}', 'verified')" title="Verify">
+                                    <i class="fas fa-check"></i>
+                                </button>
+                                <button class="btn btn-sm btn-danger action-btn" onclick="updateAttendanceStatus('${record._id}', 'rejected')" title="Reject">
+                                    <i class="fas fa-times"></i>
+                                </button>
+                            ` : ''}
+                            <button class="btn btn-sm btn-info action-btn" onclick="viewAttendanceDetails('${record._id}')" title="View Details">
+                                <i class="fas fa-eye"></i>
                             </button>
-                            <button class="btn btn-sm btn-danger action-btn" onclick="updateAttendanceStatus('${record._id}', 'rejected')" title="Reject">
-                                <i class="fas fa-times"></i>
-                            </button>
-                        ` : ''}
-                        <button class="btn btn-sm btn-info action-btn" onclick="viewAttendanceDetails('${record._id}')" title="View Details">
-                            <i class="fas fa-eye"></i>
-                        </button>
-                    </td>
-                </tr>
-            `).join('');
+                        </td>
+                    </tr>
+                `;
+            }).join('');
         }
 
         // Update attendance status
@@ -3588,6 +3702,23 @@
                     quickSearchLocationEdit(query);
                 });
             });
+
+            // Time Verification Settings - Toggle options
+            const requireMinimumStay = document.getElementById('requireMinimumStay');
+            const timeVerificationOptions = document.getElementById('timeVerificationOptions');
+            if (requireMinimumStay) {
+                requireMinimumStay.addEventListener('change', function() {
+                    timeVerificationOptions.style.display = this.checked ? 'block' : 'none';
+                });
+            }
+
+            const enableContinuousMonitoring = document.getElementById('enableContinuousMonitoring');
+            const monitoringOptions = document.getElementById('monitoringOptions');
+            if (enableContinuousMonitoring) {
+                enableContinuousMonitoring.addEventListener('change', function() {
+                    monitoringOptions.style.display = this.checked ? 'block' : 'none';
+                });
+            }
 
             // Add event listeners for modal buttons
             const nextBtn = document.getElementById('nextBtn');
