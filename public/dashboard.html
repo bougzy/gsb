@@ -3282,19 +3282,19 @@
                         <td>
                             <div class="d-flex gap-1 flex-wrap">
                                 <!-- Admin Action Buttons with Text Labels -->
-                                <button class="btn btn-sm btn-success" onclick="updateAttendanceStatus('${record._id}', 'verified')" title="Approve this attendance">
+                                <button class="btn btn-sm btn-success action-btn-verify" data-attendance-id="${record._id}" data-action="verified" title="Approve this attendance">
                                     <i class="fas fa-check me-1"></i>Verify
                                 </button>
-                                <button class="btn btn-sm btn-warning" onclick="updateAttendanceStatus('${record._id}', 'pending')" title="Move back to pending for review">
+                                <button class="btn btn-sm btn-warning action-btn-pending" data-attendance-id="${record._id}" data-action="pending" title="Move back to pending for review">
                                     <i class="fas fa-clock me-1"></i>Pending
                                 </button>
-                                <button class="btn btn-sm btn-danger" onclick="updateAttendanceStatus('${record._id}', 'rejected')" title="Reject this attendance">
+                                <button class="btn btn-sm btn-danger action-btn-reject" data-attendance-id="${record._id}" data-action="rejected" title="Reject this attendance">
                                     <i class="fas fa-times me-1"></i>Reject
                                 </button>
-                                <button class="btn btn-sm btn-secondary" onclick="updateAttendanceStatus('${record._id}', 'flagged')" title="Flag as suspicious for investigation">
+                                <button class="btn btn-sm btn-secondary action-btn-flag" data-attendance-id="${record._id}" data-action="flagged" title="Flag as suspicious for investigation">
                                     <i class="fas fa-flag me-1"></i>Flag
                                 </button>
-                                <button class="btn btn-sm btn-info" onclick="viewAttendanceDetails('${record._id}')" title="View complete details">
+                                <button class="btn btn-sm btn-info action-btn-details" data-attendance-id="${record._id}" data-action="details" title="View complete details">
                                     <i class="fas fa-eye me-1"></i>Details
                                 </button>
                             </div>
@@ -3302,6 +3302,37 @@
                     </tr>
                 `;
             }).join('');
+
+            // Add event delegation for action buttons
+            setupAttendanceActionListeners();
+        }
+
+        // Setup event delegation for attendance action buttons
+        function setupAttendanceActionListeners() {
+            const tbody = document.querySelector('#attendanceTable tbody');
+            if (!tbody) return;
+
+            // Remove old listener if exists
+            tbody.removeEventListener('click', handleAttendanceAction);
+            // Add new listener
+            tbody.addEventListener('click', handleAttendanceAction);
+        }
+
+        // Handle attendance action button clicks
+        function handleAttendanceAction(e) {
+            const button = e.target.closest('button[data-attendance-id]');
+            if (!button) return;
+
+            const attendanceId = button.dataset.attendanceId;
+            const action = button.dataset.action;
+
+            if (!attendanceId || !action) return;
+
+            if (action === 'details') {
+                viewAttendanceDetails(attendanceId);
+            } else {
+                updateAttendanceStatus(attendanceId, action);
+            }
         }
 
         // Update attendance status
