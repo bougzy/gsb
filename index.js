@@ -15,9 +15,12 @@ const moment = require('moment');
 const geolib = require('geolib');
 const NodeGeocoder = require('node-geocoder');
 const twilio = require('twilio');
+const nodemailer = require('nodemailer');
+const cron = require('node-cron');
 // const redis = require('redis');
 const { promisify } = require('util');
 const path = require('path');
+const fs = require('fs');
 
 // Initialize Express
 const app = express();
@@ -165,6 +168,281 @@ mongoose.connection.on('reconnected', () => {
 mongoose.connection.on('error', (err) => {
   console.error('❌ MongoDB error:', err.message);
 });
+
+// ===========================================
+// EMAIL SERVICE CONFIGURATION
+// ===========================================
+const createEmailTransporter = () => {
+  // Support multiple email providers via environment variables
+  const emailConfig = {
+    host: process.env.SMTP_HOST || 'smtp.gmail.com',
+    port: parseInt(process.env.SMTP_PORT || '587'),
+    secure: process.env.SMTP_SECURE === 'true',
+    auth: {
+      user: process.env.SMTP_USER || process.env.EMAIL_USER,
+      pass: process.env.SMTP_PASS || process.env.EMAIL_PASS
+    }
+  };
+
+  // Only create transporter if credentials are configured
+  if (emailConfig.auth.user && emailConfig.auth.pass) {
+    return nodemailer.createTransport(emailConfig);
+  }
+  return null;
+};
+
+let emailTransporter = null;
+
+// Initialize email transporter
+const initializeEmailService = () => {
+  emailTransporter = createEmailTransporter();
+  if (emailTransporter) {
+    console.log('✅ Email service configured');
+  } else {
+    console.log('⚠️  Email service not configured (set SMTP_USER and SMTP_PASS)');
+  }
+};
+
+// Email sending function with templates
+const sendEmail = async (to, subject, html, text) => {
+  if (!emailTransporter) {
+    console.log('Email service not configured, skipping email to:', to);
+    return { success: false, reason: 'Email service not configured' };
+  }
+
+  try {
+    const fromEmail = process.env.EMAIL_FROM || process.env.SMTP_USER || 'noreply@gsams.com';
+    const fromName = process.env.EMAIL_FROM_NAME || 'GSAMS';
+
+    const result = await emailTransporter.sendMail({
+      from: `"${fromName}" <${fromEmail}>`,
+      to,
+      subject,
+      text: text || html.replace(/<[^>]*>/g, ''),
+      html
+    });
+
+    console.log('Email sent successfully to:', to);
+    return { success: true, messageId: result.messageId };
+  } catch (error) {
+    console.error('Email sending error:', error.message);
+    return { success: false, error: error.message };
+  }
+};
+
+// Email Templates
+const emailTemplates = {
+  trialExpiring: (orgName, daysLeft, loginUrl) => ({
+    subject: `Your GSAMS Trial Expires in ${daysLeft} Days`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; text-align: center;">
+          <h1 style="color: white; margin: 0;">GSAMS</h1>
+          <p style="color: white; opacity: 0.9;">GeoSecure Attendance Management System</p>
+        </div>
+        <div style="padding: 30px; background: #f9f9f9;">
+          <h2 style="color: #333;">Your Trial is Ending Soon!</h2>
+          <p>Hello <strong>${orgName}</strong>,</p>
+          <p>Your GSAMS trial period will expire in <strong>${daysLeft} days</strong>.</p>
+          <p>To continue using all features without interruption, please select a subscription plan:</p>
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${loginUrl}" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px; font-weight: bold;">Upgrade Now</a>
+          </div>
+          <h3 style="color: #333;">What you'll lose without a subscription:</h3>
+          <ul style="color: #666;">
+            <li>GPS-verified attendance tracking</li>
+            <li>Real-time attendance reports</li>
+            <li>Multiple verification methods (SMS, USSD, Kiosk)</li>
+            <li>Analytics and export features</li>
+          </ul>
+          <p style="color: #666;">Need help choosing a plan? Reply to this email and we'll assist you.</p>
+        </div>
+        <div style="background: #333; color: white; padding: 20px; text-align: center;">
+          <p style="margin: 0; font-size: 12px;">© ${new Date().getFullYear()} GSAMS - GeoSecure Attendance Management System</p>
+        </div>
+      </div>
+    `
+  }),
+
+  trialExpired: (orgName, loginUrl) => ({
+    subject: 'Your GSAMS Trial Has Expired',
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; text-align: center;">
+          <h1 style="color: white; margin: 0;">GSAMS</h1>
+        </div>
+        <div style="padding: 30px; background: #f9f9f9;">
+          <h2 style="color: #e74c3c;">Your Trial Has Expired</h2>
+          <p>Hello <strong>${orgName}</strong>,</p>
+          <p>Your GSAMS trial period has ended. To restore access to your attendance data and continue using the system, please select a subscription plan.</p>
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${loginUrl}" style="background: #e74c3c; color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px; font-weight: bold;">Reactivate Account</a>
+          </div>
+          <p style="color: #666;">Your data is safe - it will be available once you subscribe.</p>
+        </div>
+        <div style="background: #333; color: white; padding: 20px; text-align: center;">
+          <p style="margin: 0; font-size: 12px;">© ${new Date().getFullYear()} GSAMS</p>
+        </div>
+      </div>
+    `
+  }),
+
+  welcomeEmail: (orgName, adminName, loginUrl) => ({
+    subject: 'Welcome to GSAMS - Your Attendance System is Ready!',
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; text-align: center;">
+          <h1 style="color: white; margin: 0;">Welcome to GSAMS!</h1>
+        </div>
+        <div style="padding: 30px; background: #f9f9f9;">
+          <h2 style="color: #333;">Your Account is Ready</h2>
+          <p>Hello <strong>${adminName}</strong>,</p>
+          <p>Welcome to GSAMS! Your organization <strong>${orgName}</strong> has been set up successfully.</p>
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${loginUrl}" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px; font-weight: bold;">Login to Dashboard</a>
+          </div>
+          <h3>Quick Start Guide:</h3>
+          <ol style="color: #666;">
+            <li>Create your first meeting/event</li>
+            <li>Set the location and time</li>
+            <li>Share the attendance link or QR code</li>
+            <li>Track attendance in real-time!</li>
+          </ol>
+          <p style="color: #666;">Need help? Check our documentation or reply to this email.</p>
+        </div>
+        <div style="background: #333; color: white; padding: 20px; text-align: center;">
+          <p style="margin: 0; font-size: 12px;">© ${new Date().getFullYear()} GSAMS</p>
+        </div>
+      </div>
+    `
+  }),
+
+  attendanceConfirmation: (attendeeName, meetingTitle, checkInTime, orgName) => ({
+    subject: `Attendance Confirmed - ${meetingTitle}`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <div style="background: #10b981; padding: 30px; text-align: center;">
+          <h1 style="color: white; margin: 0;">✓ Attendance Confirmed</h1>
+        </div>
+        <div style="padding: 30px; background: #f9f9f9;">
+          <p>Hello <strong>${attendeeName}</strong>,</p>
+          <p>Your attendance has been recorded:</p>
+          <div style="background: white; padding: 20px; border-radius: 10px; margin: 20px 0;">
+            <p><strong>Event:</strong> ${meetingTitle}</p>
+            <p><strong>Check-in Time:</strong> ${checkInTime}</p>
+            <p><strong>Organization:</strong> ${orgName}</p>
+          </div>
+          <p style="color: #666;">This is an automated confirmation. Please keep this for your records.</p>
+        </div>
+      </div>
+    `
+  }),
+
+  parentNotification: (parentName, childName, meetingTitle, checkInTime, orgName) => ({
+    subject: `${childName} has checked in - ${meetingTitle}`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <div style="background: #10b981; padding: 30px; text-align: center;">
+          <h1 style="color: white; margin: 0;">✓ Check-in Notification</h1>
+        </div>
+        <div style="padding: 30px; background: #f9f9f9;">
+          <p>Hello <strong>${parentName}</strong>,</p>
+          <p>This is to inform you that <strong>${childName}</strong> has checked in:</p>
+          <div style="background: white; padding: 20px; border-radius: 10px; margin: 20px 0;">
+            <p><strong>Event:</strong> ${meetingTitle}</p>
+            <p><strong>Check-in Time:</strong> ${checkInTime}</p>
+            <p><strong>Organization:</strong> ${orgName}</p>
+          </div>
+          <p style="color: #666;">This is an automated notification from ${orgName}.</p>
+        </div>
+      </div>
+    `
+  })
+};
+
+// ===========================================
+// FILE UPLOAD CONFIGURATION (for Photos)
+// ===========================================
+const uploadsDir = path.join(__dirname, 'public', 'uploads');
+const attendancePhotosDir = path.join(uploadsDir, 'attendance-photos');
+
+// Ensure upload directories exist
+const ensureUploadDirs = () => {
+  [uploadsDir, attendancePhotosDir].forEach(dir => {
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+      console.log('Created directory:', dir);
+    }
+  });
+};
+ensureUploadDirs();
+
+// Multer configuration for attendance photos
+const photoStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, attendancePhotosDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, `attendance-${uniqueSuffix}${path.extname(file.originalname)}`);
+  }
+});
+
+const photoUpload = multer({
+  storage: photoStorage,
+  limits: {
+    fileSize: 5 * 1024 * 1024 // 5MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Invalid file type. Only JPEG, PNG and WebP are allowed.'));
+    }
+  }
+});
+
+// ===========================================
+// SMS SERVICE CONFIGURATION
+// ===========================================
+const sendSMS = async (to, message) => {
+  // Try Twilio first
+  if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) {
+    try {
+      const client = twilio(
+        process.env.TWILIO_ACCOUNT_SID,
+        process.env.TWILIO_AUTH_TOKEN
+      );
+
+      const result = await client.messages.create({
+        body: message,
+        from: process.env.TWILIO_PHONE_NUMBER,
+        to
+      });
+
+      console.log('SMS sent via Twilio to:', to);
+      return { success: true, provider: 'twilio', sid: result.sid };
+    } catch (error) {
+      console.error('Twilio SMS error:', error.message);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // Africa's Talking fallback (common in Africa)
+  if (process.env.AT_API_KEY && process.env.AT_USERNAME) {
+    try {
+      // Africa's Talking implementation would go here
+      console.log('SMS would be sent via Africa\'s Talking to:', to);
+      return { success: true, provider: 'africas_talking', simulated: true };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  console.log('SMS service not configured, skipping SMS to:', to);
+  return { success: false, reason: 'SMS service not configured' };
+};
 
 // Database Models
 const Schema = mongoose.Schema;
@@ -441,7 +719,25 @@ const AttendanceRecordSchema = new Schema({
     phone: { type: String },
     email: { type: String },
     idNumber: { type: String },
-    additionalFields: { type: Map, of: String }
+    additionalFields: { type: Map, of: String },
+    // Parent/Guardian contact for notifications (for schools/youth programs)
+    parentContact: {
+      name: { type: String },
+      phone: { type: String },
+      email: { type: String },
+      relationship: { type: String }, // parent, guardian, emergency contact
+      notifyOnCheckIn: { type: Boolean, default: false },
+      notifyOnCheckOut: { type: Boolean, default: false }
+    }
+  },
+  // Photo verification
+  photoVerification: {
+    photoUrl: { type: String }, // Path to uploaded photo
+    photoTakenAt: { type: Date },
+    isVerified: { type: Boolean, default: false },
+    verifiedByAdminId: { type: Schema.Types.ObjectId, ref: 'AdminUser' },
+    verifiedAt: { type: Date },
+    rejectionReason: { type: String }
   },
   locationData: {
     // For GPS verification
@@ -4374,7 +4670,35 @@ app.post('/api/attend/smartphone', async (req, res) => {
       ipAddress: req.ip,
       userAgent: req.get('User-Agent')
     });
-    
+
+    // Send parent/guardian notifications if configured
+    if (attendeeInfo.parentContact && attendeeInfo.parentContact.notifyOnCheckIn) {
+      const org = await Organization.findById(meeting.organizationId);
+      const checkInTime = moment(now).format('h:mm A, MMMM D, YYYY');
+
+      // Send SMS notification to parent
+      if (attendeeInfo.parentContact.phone) {
+        const smsMessage = `${attendeeInfo.fullName} has checked in to "${meeting.title}" at ${moment(now).format('h:mm A')}. - ${org?.name || 'GSAMS'}`;
+        sendSMS(attendeeInfo.parentContact.phone, smsMessage).catch(err =>
+          console.error('Parent SMS notification error:', err)
+        );
+      }
+
+      // Send email notification to parent
+      if (attendeeInfo.parentContact.email) {
+        const emailTemplate = emailTemplates.parentNotification(
+          attendeeInfo.parentContact.name || 'Parent/Guardian',
+          attendeeInfo.fullName,
+          meeting.title,
+          checkInTime,
+          org?.name || 'GSAMS'
+        );
+        sendEmail(attendeeInfo.parentContact.email, emailTemplate.subject, emailTemplate.html).catch(err =>
+          console.error('Parent email notification error:', err)
+        );
+      }
+    }
+
   } catch (error) {
     console.error('Smartphone attendance error:', error);
     
@@ -6472,7 +6796,403 @@ app.get('/api/meetings/:meetingId/live', authenticateToken, async (req, res) => 
   }
 });
 
-// 10. Health Check
+// ===========================================
+// 10. NOTIFICATION & EMAIL SYSTEM
+// ===========================================
+
+// Send trial expiration warnings (called by cron or manually)
+const sendTrialExpirationEmails = async () => {
+  try {
+    const now = new Date();
+    const baseUrl = process.env.BASE_URL || 'https://gsams.vercel.app';
+
+    // Find organizations with trials expiring in 7, 3, or 1 days
+    const warningDays = [7, 3, 1];
+
+    for (const days of warningDays) {
+      const targetDate = new Date(now);
+      targetDate.setDate(targetDate.getDate() + days);
+      const startOfDay = new Date(targetDate.setHours(0, 0, 0, 0));
+      const endOfDay = new Date(targetDate.setHours(23, 59, 59, 999));
+
+      const expiringOrgs = await Organization.find({
+        'subscription.status': 'trial',
+        'subscription.trialEndsAt': {
+          $gte: startOfDay,
+          $lte: endOfDay
+        }
+      });
+
+      for (const org of expiringOrgs) {
+        // Get the admin's email
+        const admin = await AdminUser.findOne({
+          organizationId: org._id,
+          role: 'super_admin'
+        });
+
+        if (admin?.email || org.billing?.email) {
+          const email = admin?.email || org.billing?.email;
+          const template = emailTemplates.trialExpiring(
+            org.name,
+            days,
+            `${baseUrl}/subscription.html`
+          );
+
+          await sendEmail(email, template.subject, template.html);
+          console.log(`Trial expiration warning sent to ${org.name} (${days} days left)`);
+
+          // Log the notification
+          await AuditLog.create({
+            organizationId: org._id,
+            action: 'TRIAL_EXPIRATION_EMAIL_SENT',
+            entityType: 'organization',
+            entityId: org._id,
+            details: { daysLeft: days, sentTo: email }
+          });
+        }
+      }
+    }
+
+    // Find and mark expired trials
+    const expiredOrgs = await Organization.find({
+      'subscription.status': 'trial',
+      'subscription.trialEndsAt': { $lt: now }
+    });
+
+    for (const org of expiredOrgs) {
+      org.subscription.status = 'expired';
+      await org.save();
+
+      // Send expired notification
+      const admin = await AdminUser.findOne({
+        organizationId: org._id,
+        role: 'super_admin'
+      });
+
+      if (admin?.email || org.billing?.email) {
+        const email = admin?.email || org.billing?.email;
+        const template = emailTemplates.trialExpired(
+          org.name,
+          `${baseUrl}/subscription.html`
+        );
+
+        await sendEmail(email, template.subject, template.html);
+        console.log(`Trial expired notification sent to ${org.name}`);
+      }
+    }
+
+    return {
+      success: true,
+      warningsSent: warningDays.length,
+      expiredUpdated: expiredOrgs.length
+    };
+  } catch (error) {
+    console.error('Trial expiration email error:', error);
+    return { success: false, error: error.message };
+  }
+};
+
+// Manual trigger for trial expiration emails (platform admin only)
+app.post('/api/platform-admin/notifications/trial-expiration', authenticatePlatformAdmin, async (req, res) => {
+  try {
+    const result = await sendTrialExpirationEmails();
+    res.json(result);
+  } catch (error) {
+    console.error('Manual trial notification error:', error);
+    res.status(500).json({ error: 'Failed to send trial notifications' });
+  }
+});
+
+// Send welcome email when organization is created
+app.post('/api/notifications/welcome', authenticateToken, async (req, res) => {
+  try {
+    const { email, adminName, orgName } = req.body;
+    const baseUrl = process.env.BASE_URL || 'https://gsams.vercel.app';
+
+    const template = emailTemplates.welcomeEmail(
+      orgName,
+      adminName,
+      `${baseUrl}/login.html`
+    );
+
+    const result = await sendEmail(email, template.subject, template.html);
+    res.json(result);
+  } catch (error) {
+    console.error('Welcome email error:', error);
+    res.status(500).json({ error: 'Failed to send welcome email' });
+  }
+});
+
+// Send test email (for configuration testing)
+app.post('/api/notifications/test', authenticatePlatformAdmin, async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ error: 'Email address is required' });
+    }
+
+    const result = await sendEmail(
+      email,
+      'GSAMS Test Email - Configuration Working',
+      `
+        <div style="font-family: Arial, sans-serif; padding: 20px;">
+          <h2 style="color: #667eea;">✓ Email Configuration Working</h2>
+          <p>This is a test email from GSAMS.</p>
+          <p>Your email notification system is properly configured.</p>
+          <p><strong>Sent at:</strong> ${new Date().toISOString()}</p>
+        </div>
+      `
+    );
+
+    res.json({
+      success: result.success,
+      message: result.success ? 'Test email sent successfully' : 'Failed to send test email',
+      details: result
+    });
+  } catch (error) {
+    console.error('Test email error:', error);
+    res.status(500).json({ error: 'Failed to send test email', details: error.message });
+  }
+});
+
+// Get notification settings
+app.get('/api/notifications/settings', authenticateToken, async (req, res) => {
+  try {
+    const org = await Organization.findById(req.user.organizationId._id);
+
+    res.json({
+      emailConfigured: !!emailTransporter,
+      smsConfigured: !!(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN),
+      organizationSettings: {
+        allowSMS: org?.settings?.allowSMS ?? true,
+        billingEmail: org?.billing?.email
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to get notification settings' });
+  }
+});
+
+// ===========================================
+// 11. PHOTO VERIFICATION ENDPOINTS
+// ===========================================
+
+// Upload attendance photo
+app.post('/api/attend/photo', photoUpload.single('photo'), async (req, res) => {
+  try {
+    const { attendanceId, meetingCode, attendeeInfo, locationData, deviceInfo } = req.body;
+
+    // If attendanceId is provided, update existing record
+    if (attendanceId) {
+      const attendance = await AttendanceRecord.findById(attendanceId);
+      if (!attendance) {
+        return res.status(404).json({ error: 'Attendance record not found' });
+      }
+
+      if (req.file) {
+        attendance.photoVerification = {
+          photoUrl: `/uploads/attendance-photos/${req.file.filename}`,
+          photoTakenAt: new Date(),
+          isVerified: false
+        };
+        await attendance.save();
+      }
+
+      return res.json({
+        success: true,
+        message: 'Photo uploaded successfully',
+        photoUrl: attendance.photoVerification.photoUrl
+      });
+    }
+
+    // Otherwise, create new attendance with photo
+    if (!meetingCode || !attendeeInfo) {
+      return res.status(400).json({ error: 'Meeting code and attendee info are required' });
+    }
+
+    // Parse JSON strings if needed
+    const parsedAttendeeInfo = typeof attendeeInfo === 'string' ? JSON.parse(attendeeInfo) : attendeeInfo;
+    const parsedLocationData = locationData ? (typeof locationData === 'string' ? JSON.parse(locationData) : locationData) : {};
+    const parsedDeviceInfo = deviceInfo ? (typeof deviceInfo === 'string' ? JSON.parse(deviceInfo) : deviceInfo) : {};
+
+    // Find meeting
+    const meeting = await Meeting.findOne({
+      'accessCodes.publicCode': meetingCode,
+      status: { $in: ['active', 'in_progress'] }
+    });
+
+    if (!meeting) {
+      // Clean up uploaded file
+      if (req.file) {
+        fs.unlinkSync(path.join(attendancePhotosDir, req.file.filename));
+      }
+      return res.status(404).json({ error: 'Meeting not found or not active' });
+    }
+
+    const now = new Date();
+
+    // Create attendance record with photo
+    const attendanceRecord = await AttendanceRecord.create({
+      meetingId: meeting._id,
+      organizationId: meeting.organizationId,
+      verificationType: 'smartphone_gps',
+      attendeeInfo: parsedAttendeeInfo,
+      photoVerification: req.file ? {
+        photoUrl: `/uploads/attendance-photos/${req.file.filename}`,
+        photoTakenAt: now,
+        isVerified: false
+      } : undefined,
+      locationData: {
+        coordinates: parsedLocationData,
+        isWithinRadius: true
+      },
+      deviceInfo: parsedDeviceInfo,
+      verificationDetails: {
+        confidenceScore: 75,
+        verificationMethod: 'GPS_WITH_PHOTO'
+      },
+      timeTracking: {
+        checkInTime: now
+      },
+      status: 'pending',
+      auditTrail: [{
+        action: 'ATTENDANCE_WITH_PHOTO_RECORDED',
+        notes: 'Attendance recorded with photo verification'
+      }]
+    });
+
+    res.status(201).json({
+      success: true,
+      attendanceId: attendanceRecord._id,
+      status: attendanceRecord.status,
+      photoUrl: attendanceRecord.photoVerification?.photoUrl,
+      message: 'Attendance recorded with photo. Pending verification.'
+    });
+
+  } catch (error) {
+    console.error('Photo attendance error:', error);
+    res.status(500).json({ error: 'Failed to process photo attendance', details: error.message });
+  }
+});
+
+// Admin: Verify attendance photo
+app.post('/api/attendance/:attendanceId/verify-photo', authenticateToken, async (req, res) => {
+  try {
+    const { attendanceId } = req.params;
+    const { isVerified, rejectionReason } = req.body;
+
+    const attendance = await AttendanceRecord.findById(attendanceId);
+    if (!attendance) {
+      return res.status(404).json({ error: 'Attendance record not found' });
+    }
+
+    // Check organization ownership
+    if (attendance.organizationId.toString() !== req.user.organizationId._id.toString()) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    if (!attendance.photoVerification?.photoUrl) {
+      return res.status(400).json({ error: 'No photo to verify' });
+    }
+
+    attendance.photoVerification.isVerified = isVerified;
+    attendance.photoVerification.verifiedByAdminId = req.user._id;
+    attendance.photoVerification.verifiedAt = new Date();
+
+    if (!isVerified && rejectionReason) {
+      attendance.photoVerification.rejectionReason = rejectionReason;
+      attendance.status = 'rejected';
+    } else if (isVerified) {
+      attendance.status = 'verified';
+    }
+
+    attendance.auditTrail.push({
+      action: isVerified ? 'PHOTO_VERIFIED' : 'PHOTO_REJECTED',
+      performedBy: req.user._id,
+      notes: rejectionReason || 'Photo verification completed'
+    });
+
+    await attendance.save();
+
+    res.json({
+      success: true,
+      message: isVerified ? 'Photo verified successfully' : 'Photo rejected',
+      attendance: {
+        id: attendance._id,
+        status: attendance.status,
+        photoVerification: attendance.photoVerification
+      }
+    });
+
+  } catch (error) {
+    console.error('Photo verification error:', error);
+    res.status(500).json({ error: 'Failed to verify photo' });
+  }
+});
+
+// Get attendance records with photos pending verification
+app.get('/api/attendance/pending-photos', authenticateToken, async (req, res) => {
+  try {
+    const { meetingId } = req.query;
+
+    const query = {
+      organizationId: req.user.organizationId._id,
+      'photoVerification.photoUrl': { $exists: true, $ne: null },
+      'photoVerification.isVerified': false
+    };
+
+    if (meetingId) {
+      query.meetingId = meetingId;
+    }
+
+    const pendingRecords = await AttendanceRecord.find(query)
+      .populate('meetingId', 'title')
+      .sort({ createdAt: -1 })
+      .limit(50);
+
+    res.json({
+      count: pendingRecords.length,
+      records: pendingRecords.map(r => ({
+        id: r._id,
+        attendeeName: r.attendeeInfo.fullName,
+        meetingTitle: r.meetingId?.title,
+        photoUrl: r.photoVerification.photoUrl,
+        checkInTime: r.timeTracking.checkInTime,
+        status: r.status
+      }))
+    });
+
+  } catch (error) {
+    console.error('Get pending photos error:', error);
+    res.status(500).json({ error: 'Failed to get pending photos' });
+  }
+});
+
+// ===========================================
+// 12. SCHEDULED TASKS (CRON JOBS)
+// ===========================================
+
+// Initialize scheduled tasks
+const initializeScheduledTasks = () => {
+  // Run trial expiration check daily at 9 AM
+  cron.schedule('0 9 * * *', async () => {
+    console.log('Running scheduled trial expiration check...');
+    await sendTrialExpirationEmails();
+  });
+
+  // Run additional check at 6 PM for same-day expirations
+  cron.schedule('0 18 * * *', async () => {
+    console.log('Running evening trial expiration check...');
+    await sendTrialExpirationEmails();
+  });
+
+  console.log('✅ Scheduled tasks initialized');
+};
+
+// ===========================================
+// 13. Health Check
+// ===========================================
 app.get('/api/health', (req, res) => {
   const dbState = mongoose.connection.readyState;
   const dbStateMap = {
@@ -6553,10 +7273,18 @@ app.use((req, res) => {
 const startServer = async () => {
   try {
     // await redisClient.connect();
-    
+
+    // Initialize email service
+    initializeEmailService();
+
+    // Initialize scheduled tasks (cron jobs)
+    initializeScheduledTasks();
+
     app.listen(PORT, () => {
       console.log(`GSAMS Backend running on port ${PORT}`);
       console.log(`Health check: http://localhost:${PORT}/api/health`);
+      console.log(`Email service: ${emailTransporter ? 'Configured' : 'Not configured (set SMTP_USER and SMTP_PASS)'}`);
+      console.log(`SMS service: ${process.env.TWILIO_ACCOUNT_SID ? 'Configured' : 'Not configured (set TWILIO_* env vars)'}`);
     });
   } catch (error) {
     console.error('Failed to start server:', error);

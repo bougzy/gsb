@@ -429,11 +429,13 @@ POST /api/organization/subscription/select-plan - Change plan
 - ✅ Monthly and annual billing
 - ✅ Beautiful, responsive UI
 - ✅ Audit logging for plan changes
+- ✅ **Automatic email notifications** (trial expiring at 7, 3, 1 days)
+- ✅ **Parent/Guardian SMS notifications** (when child checks in)
+- ✅ **Photo verification** for attendance
 
 **What's Needed for Production:**
 - ⏳ Payment integration (Stripe/Paystack)
 - ⏳ Automated billing
-- ⏳ Email notifications (trial ending, payment failed, etc.)
 - ⏳ Usage limit enforcement (prevent exceeding limits)
 - ⏳ Invoice generation
 
@@ -443,10 +445,124 @@ POST /api/organization/subscription/select-plan - Change plan
 3. Let them upgrade themselves
 4. Track their usage
 5. Manage subscriptions centrally
+6. Send automated trial expiration emails
+7. Notify parents when children check in
+8. Verify attendance with photos
 
 Just add payment integration when you're ready to charge customers.
 
 ---
 
-**Last Updated:** 2026-01-20
-**Status:** ✅ Production Ready (Manual Billing)
+## 📧 Email Notification System
+
+### Configuration
+Set these environment variables to enable email notifications:
+```
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=your-email@gmail.com
+SMTP_PASS=your-app-password
+EMAIL_FROM=noreply@gsams.com
+EMAIL_FROM_NAME=GSAMS
+```
+
+### Automatic Notifications
+The system automatically sends:
+- **7 days before trial expires**: Warning email
+- **3 days before trial expires**: Urgent reminder
+- **1 day before trial expires**: Final warning
+- **On trial expiration**: Expired notification + status update
+
+### Manual Trigger
+Platform admins can manually trigger trial expiration emails:
+```
+POST /api/platform-admin/notifications/trial-expiration
+```
+
+### Test Email
+Test your email configuration:
+```
+POST /api/notifications/test
+Body: { "email": "test@example.com" }
+```
+
+---
+
+## 📱 Parent/Guardian SMS Notifications
+
+### How It Works
+When a child/member checks in to a meeting, their parent/guardian receives an SMS notification.
+
+### Setting Up Parent Contact
+Include parent contact in the attendance request:
+```javascript
+{
+  "attendeeInfo": {
+    "fullName": "John Smith",
+    "phone": "+1234567890",
+    "parentContact": {
+      "name": "Jane Smith",
+      "phone": "+0987654321",
+      "email": "parent@example.com",
+      "relationship": "parent",
+      "notifyOnCheckIn": true,
+      "notifyOnCheckOut": true
+    }
+  }
+}
+```
+
+### SMS Configuration
+Set Twilio environment variables:
+```
+TWILIO_ACCOUNT_SID=your-account-sid
+TWILIO_AUTH_TOKEN=your-auth-token
+TWILIO_PHONE_NUMBER=+1234567890
+```
+
+---
+
+## 📷 Photo Verification
+
+### Upload Photo with Attendance
+```
+POST /api/attend/photo
+Content-Type: multipart/form-data
+
+Fields:
+- photo: (file) JPEG, PNG, or WebP image (max 5MB)
+- meetingCode: (string) Meeting access code
+- attendeeInfo: (JSON) { "fullName": "John Doe", "phone": "..." }
+- locationData: (JSON) { "latitude": ..., "longitude": ... }
+- deviceInfo: (JSON) { "userAgent": "...", "platform": "..." }
+```
+
+### Add Photo to Existing Attendance
+```
+POST /api/attend/photo
+Content-Type: multipart/form-data
+
+Fields:
+- photo: (file) Image file
+- attendanceId: (string) Existing attendance record ID
+```
+
+### Admin: Verify Photo
+```
+POST /api/attendance/:attendanceId/verify-photo
+Body: { "isVerified": true }
+// or
+Body: { "isVerified": false, "rejectionReason": "Photo not clear" }
+```
+
+### Get Pending Photo Verifications
+```
+GET /api/attendance/pending-photos
+GET /api/attendance/pending-photos?meetingId=123
+```
+
+---
+
+**Last Updated:** 2026-01-21
+**Status:** ✅ Production Ready (Manual Billing) + Notifications + Photo Verification
